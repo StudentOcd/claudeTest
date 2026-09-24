@@ -2,7 +2,7 @@ import { app } from '../app.js';
 import { html, fmt, toast, pageHead, storeChip } from '../ui.js';
 import { icon } from '../icons.js';
 import { foodTile, mealCollage, productFor, withPhotosFirst } from '../photos.js';
-import { FOOD_BY_ID, describeAmount } from '/core/foods.js';
+import { FOOD_BY_ID, amountParts, isSeasoning, macrosFor, nutritionSource, plainName } from '/core/foods.js';
 import { getRecipe, RECIPES } from '/core/recipes.js';
 import { scaleRecipe, recipeAllowed } from '/core/planner.js';
 import { slotBudgets } from '/core/nutrition.js';
@@ -17,12 +17,25 @@ function ingredientRow(i) {
   const f = FOOD_BY_ID[i.food];
   const store = app.settings.stores[0];
   const prod = productFor(i.food, store) || productFor(i.food, 'pingodoce') || productFor(i.food, 'auchan');
+  const a = amountParts(f, i.g);
+  const m = macrosFor(f, i.g);
   return html`<li><button class="item plain" data-action="product" data-food="${i.food}" data-store="${prod?.store || store}">
     ${foodTile(i.food, { size: 'sm', store })}
-    <div class="grow"><div class="title"><span class="amount">${describeAmount(f, i.g)}</span> ${f.name}</div>
-      <div class="sub">${prod ? html`${storeChip(prod.store)} ${prod.name}` : f.en}</div>
-      ${f.gut.note ? html`<div class="sub">${f.gut.note}</div>` : ''}</div>
+    <div class="grow">
+      <div class="title">${plainName(f)}</div>
+      <div class="qty"><b class="amount">${a.qty}</b>${a.state ? html`<span class="state">${a.state}</span>` : ''}${a.grams ? html`<span class="muted small">${a.grams}</span>` : ''}</div>
+      ${a.cooked ? html`<div class="sub">${a.cooked}, for checking your portion after cooking</div>` : ''}
+      <div class="sub">${Math.round(m.kcal)} kcal · ${Math.round(m.p)} g protein${prod ? html` · ${storeChip(prod.store)} ${prod.name}` : ''}</div>
+    </div>
     ${icon('chevron-right', 'sm')}</button></li>`;
+}
+
+// Where this recipe's numbers come from.
+function sourcesNote(items) {
+  const foods = [...new Set(items.filter((i) => i.g > 0).map((i) => i.food))];
+  const labels = foods.filter((id) => nutritionSource(id)?.kind === 'label').length;
+  const refs = foods.length - labels;
+  return html`<p class="tiny muted mt">${icon('info', 'sm')} Nutrition: ${labels ? `${labels} ingredient${labels > 1 ? 's' : ''} from your product's label, ` : ''}${refs} from CIQUAL 2025, the EU food composition table (ANSES). Tap an ingredient to see its numbers.</p>`;
 }
 
 export default {
@@ -44,7 +57,9 @@ export default {
     const fav = (app.settings.favoriteRecipes || []).includes(r.id);
     const hidden = (app.settings.hiddenRecipes || []).includes(r.id);
     const allowed = recipeAllowed(r, ctx);
-    const seasonings = items.filter((i) => FOOD_BY_ID[i.food].per100.kcal === 0).map((i) => FOOD_BY_ID[i.food].name);
+    // Full English name here: "garlic (only to flavour oil, then discard)" must keep its instruction.
+    const seasonings = items.filter((i) => isSeasoning(FOOD_BY_ID[i.food]) && !FOOD_BY_ID[i.food].unit).map((i) => FOOD_BY_ID[i.food].en.toLowerCase());
+    const main = items.filter((i) => i.g > 0 && (!isSeasoning(FOOD_BY_ID[i.food]) || FOOD_BY_ID[i.food].unit));
     return html`
       <div class="row" style="margin:4px 0 12px">
         <a class="icon-btn" href="#/plan" aria-label="Back to plan">${icon('arrow-left')}</a>
@@ -69,11 +84,13 @@ export default {
           <div style="--c:var(--fat)"><b>${Math.round(macros.f)} g</b><span>fat</span></div>
           <div style="--c:var(--fibre)"><b>${Math.round(macros.fib)} g</b><span>fibre</span></div>
         </div>
+        ${sourcesNote(items)}
       </div>
       <div class="card">
         <div class="card-head"><h2>Ingredients</h2><span class="chip">1 portion</span></div>
-        <ul class="list">${items.filter((i) => i.g > 0 && FOOD_BY_ID[i.food].per100.kcal > 0).map(ingredientRow)}</ul>
-        ${seasonings.length ? html`<p class="small muted mt">Season with ${seasonings.join(', ').toLowerCase()}, salt and pepper.</p>` : ''}
+        <div class="callout info" style="margin:0 0 12px">${icon('scale')}<div class="small"><b>Weigh before cooking.</b> Meat and fish raw, rice, pasta and oats dry, tuna drained, vegetables after peeling. The cooked weight is only there to check a portion you cooked in advance.</div></div>
+        <ul class="list">${main.map(ingredientRow)}</ul>
+        ${seasonings.length ? html`<p class="small muted mt">Season with ${seasonings.join(', ')}, salt and pepper (counted in the numbers above).</p>` : ''}
       </div>
       <div class="card">
         <div class="card-head"><h2>How to cook it</h2></div>

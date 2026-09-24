@@ -2,7 +2,7 @@
 // estimated cost. Prices come from (newest first): your own entries, Open
 // Prices / store websites, then the catalogue estimates.
 
-import { FOOD_BY_ID, SECTIONS, STORES, formatCount } from './foods.js';
+import { FOOD_BY_ID, SECTIONS, STORES, formatCount, unitLabel } from './foods.js';
 
 export const STORE_IDS = Object.keys(STORES);
 
@@ -70,14 +70,27 @@ export function costFor(f, needGrams, offer) {
   const purchaseG = needGrams / (f.edible || 1);
   const units = f.unit ? needGrams / f.unit.grams : null;
   if (offer.sold === 'weight') {
-    const kg = purchaseG / 1000;
-    const approx = units ? `${formatCount(Math.ceil(units * 2) / 2)} ${units <= 1 ? f.unit.name : f.unit.plural} (~${Math.round(purchaseG / 50) * 50 || 50} g)` : `~${Math.max(50, Math.round(purchaseG / 50) * 50)} g`;
-    return { text: approx, packs: null, costEur: kg * offer.eur, usedEur: kg * offer.eur, leftoverText: '' };
+    // Loose fruit: whole pieces. Counter/tray: round UP to the next 50 g, never below what you need.
+    const usedEur = (purchaseG / 1000) * offer.eur;
+    if (units !== null) {
+      const n = Math.max(1, Math.ceil(units - 0.05));
+      const boughtG = (n * f.unit.grams) / (f.edible || 1);
+      const left = n - units;
+      return {
+        text: `${n} ${unitLabel(f, n)} (~${Math.round(boughtG / 10) * 10} g)`,
+        packs: null,
+        costEur: (boughtG / 1000) * offer.eur,
+        usedEur,
+        leftoverText: left >= 0.5 ? `${formatCount(Math.floor(left * 2) / 2)} ${unitLabel(f, Math.floor(left * 2) / 2)} left over` : '',
+      };
+    }
+    const boughtG = Math.max(50, Math.ceil(purchaseG / 50 - 1e-9) * 50);
+    return { text: `~${boughtG} g`, packs: null, costEur: (boughtG / 1000) * offer.eur, usedEur, leftoverText: '' };
   }
   if (offer.sold === 'unit') {
     const exact = units ?? purchaseG / 100;
     const n = Math.max(1, Math.ceil(exact - 1e-9));
-    return { text: `${n} × ${f.unit?.name || 'un.'}`, packs: n, costEur: n * offer.eur, usedEur: exact * offer.eur, leftoverText: '' };
+    return { text: `${n} × ${f.unit?.name || 'piece'}`, packs: n, costEur: n * offer.eur, usedEur: exact * offer.eur, leftoverText: '' };
   }
   // pack
   if (offer.packUnits && units !== null) {

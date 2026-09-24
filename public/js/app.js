@@ -9,6 +9,8 @@ import { buildShoppingList } from '/core/shopping.js';
 import { latestTrend, weeklyCheckIn, estimateTdeeFromData } from '/core/weight.js';
 import { gutSummary } from '/core/gut.js';
 import { seenPriceEntries } from '/core/products.js';
+import { setNutritionOverrides } from '/core/foods.js';
+import { labelNutrition } from '/core/labels.js';
 import { sessionsBetween, strengthChangePct } from '/core/training.js';
 
 export const app = {
@@ -20,7 +22,18 @@ export const app = {
 
   async load() {
     this.state = await api.get('/api/state');
+    this.applyLabels();
     return this.state;
+  },
+
+  // Use the nutrition label of the product you buy (checked) instead of the reference table.
+  labels: {},
+  applyLabels() {
+    const on = this.state?.settings?.useLabelNutrition !== false;
+    this.labels = on && this.state
+      ? labelNutrition({ catalog: this.catalog, choices: this.state.productChoice, stores: this.state.settings.stores })
+      : {};
+    setNutritionOverrides(this.labels);
   },
 
   // Product crawl running on the server (started by you or on first start-up).
@@ -72,6 +85,7 @@ export const app = {
     } catch {
       // keep the last copy
     }
+    this.applyLabels();
     return this.catalog;
   },
 
@@ -225,6 +239,7 @@ export const app = {
 
   async saveSettings(patch) {
     this.state.settings = await api.put('/api/settings', patch);
+    this.applyLabels();
     return this.state.settings;
   },
 

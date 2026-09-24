@@ -5,7 +5,7 @@
 import { app } from './app.js';
 import { html } from './ui.js';
 import { icon } from './icons.js';
-import { FOOD_BY_ID } from '/core/foods.js';
+import { FOOD_BY_ID, isSeasoning, nutritionOf } from '/core/foods.js';
 import { productsFor } from '/core/products.js';
 
 const SECTION_ICON = {
@@ -94,8 +94,8 @@ export function foodTile(foodId, { size = '', store = null, storeTag = false } =
 /** Up to four ingredient photos for a meal (biggest ingredients first, photos preferred). */
 export function mealCollage(items, { size = '' } = {}) {
   const ranked = items
-    .filter((i) => i.g > 0 && FOOD_BY_ID[i.food]?.per100.kcal > 0)
-    .sort((a, b) => b.g * (FOOD_BY_ID[b.food].per100.kcal + 50) - a.g * (FOOD_BY_ID[a.food].per100.kcal + 50))
+    .filter((i) => i.g > 0 && FOOD_BY_ID[i.food] && !isSeasoning(FOOD_BY_ID[i.food]))
+    .sort((a, b) => b.g * (nutritionOf(b.food).kcal + 50) - a.g * (nutritionOf(a.food).kcal + 50))
     .map((i) => ({ i, ph: photoFor(i.food) }));
   const main = [...ranked.filter((x) => x.ph), ...ranked.filter((x) => !x.ph)].slice(0, 4);
   if (!main.length) return html`<div class="collage n1 ${size}"><span class="blank tint-mercearia">${icon('utensils')}</span></div>`;
@@ -111,8 +111,8 @@ export function mealCollage(items, { size = '' } = {}) {
 /** Foods ordered for a photo strip: biggest first, the ones with photos ahead. */
 export function withPhotosFirst(items) {
   const ranked = items
-    .filter((i) => i.g > 0 && FOOD_BY_ID[i.food]?.per100.kcal > 0)
-    .sort((a, b) => b.g * (FOOD_BY_ID[b.food].per100.kcal + 50) - a.g * (FOOD_BY_ID[a.food].per100.kcal + 50));
+    .filter((i) => i.g > 0 && FOOD_BY_ID[i.food] && !isSeasoning(FOOD_BY_ID[i.food]))
+    .sort((a, b) => b.g * (nutritionOf(b.food).kcal + 50) - a.g * (nutritionOf(a.food).kcal + 50));
   return [...ranked.filter((i) => photoFor(i.food)), ...ranked.filter((i) => !photoFor(i.food))];
 }
 

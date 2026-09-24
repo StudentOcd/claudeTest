@@ -45,6 +45,7 @@ export function defaultState() {
       location: { lat: 38.7223, lon: -9.1393, radiusKm: 25, label: 'Lisboa' },
       hevyAutoPushWeight: false,
       appearance: { accent: 'blue', mode: 'system' },
+      useLabelNutrition: true,
     },
     weights: [],
     days: {},

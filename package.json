@@ -12,7 +12,8 @@
     "dev": "node --watch server/index.js",
     "test": "node --test",
     "check:connectors": "node scripts/check-connectors.js",
-    "crawl": "node scripts/crawl-stores.js"
+    "crawl": "node scripts/crawl-stores.js",
+    "build:nutrition": "node scripts/build-reference-nutrition.js"
   },
   "license": "MIT"
 }

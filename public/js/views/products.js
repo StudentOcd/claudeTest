@@ -5,7 +5,7 @@ import { icon } from '../icons.js';
 import { looksLike } from '../match.js';
 import { foodTile, productFor, productTile } from '../photos.js';
 import { openProductModal } from './shop.js';
-import { FOODS, FOOD_BY_ID, SECTIONS } from '/core/foods.js';
+import { FOODS, FOOD_BY_ID, SECTIONS, isSeasoning } from '/core/foods.js';
 import { scanProduct } from '/core/gut.js';
 
 let lastResults = [];
@@ -41,7 +41,7 @@ function nutritionTable(per100) {
 }
 
 function foodOptions(selected = '') {
-  return html`<option value="">Link to a food in my plan…</option>${FOODS.filter((f) => f.per100.kcal > 0).map(
+  return html`<option value="">Link to a food in my plan…</option>${FOODS.filter((f) => !isSeasoning(f) || !f.buy.pantry).map(
     (f) => html`<option value="${f.id}" ${f.id === selected ? 'selected' : ''}>${f.name}</option>`,
   )}`;
 }
@@ -152,7 +152,7 @@ async function startCamera() {
 }
 
 function foodGrid() {
-  const foods = FOODS.filter((f) => !f.buy.pantry && f.per100.kcal > 0 && (section === 'all' || f.section === section));
+  const foods = FOODS.filter((f) => !f.buy.pantry && !isSeasoning(f) && (section === 'all' || f.section === section));
   const main = app.settings.stores[0];
   return html`<div class="product-grid">${foods.map((f) => {
     const p = productFor(f.id, main) || productFor(f.id, 'pingodoce') || productFor(f.id, 'auchan');
@@ -167,7 +167,7 @@ function foodGrid() {
 export default {
   render() {
     const src = lastQuery.source;
-    const sections = Object.entries(SECTIONS).filter(([k]) => FOODS.some((f) => f.section === k && !f.buy.pantry && f.per100.kcal > 0));
+    const sections = Object.entries(SECTIONS).filter(([k]) => FOODS.some((f) => f.section === k && !f.buy.pantry && !isSeasoning(f)));
     return html`
       ${pageHead('Products', 'Pingo Doce · Auchan · Mercadona')}
       <form class="card" data-submit="search">

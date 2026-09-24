@@ -24,8 +24,9 @@ test('phase and exclusions filter recipes', () => {
 });
 
 test('rounding respects units, steps and gut caps', () => {
-  assert.equal(roundAmount(FOOD_BY_ID.eggs, 130), 156); // 2.5 eggs -> 3
-  assert.equal(roundAmount(FOOD_BY_ID.eggs, 300), 156); // capped at 3 eggs
+  const egg = FOOD_BY_ID.eggs.unit.grams;
+  assert.equal(roundAmount(FOOD_BY_ID.eggs, egg * 2.5), egg * 3); // 2.5 eggs -> 3
+  assert.equal(roundAmount(FOOD_BY_ID.eggs, 300), egg * 3); // capped at 3 eggs
   assert.equal(roundAmount(FOOD_BY_ID.chicken_breast, 173), 170);
   assert.equal(roundAmount(FOOD_BY_ID.rice_white, 72), 70);
   assert.equal(roundAmount(FOOD_BY_ID.sweet_potato, 180), 100);

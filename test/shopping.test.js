@@ -16,17 +16,23 @@ test('pack items round up to whole packs', () => {
 });
 
 test('eggs are bought by the dozen', () => {
-  const c = costFor(FOOD_BY_ID.eggs, 52 * 13, { sold: 'pack', eur: 3.09, packUnits: 12, packLabel: 'dúzia' });
+  const c = costFor(FOOD_BY_ID.eggs, FOOD_BY_ID.eggs.unit.grams * 13, { sold: 'pack', eur: 3.09, packUnits: 12, packLabel: 'dúzia' });
   assert.equal(c.packs, 2);
   assert.ok(Math.abs(c.costEur - 6.18) < 1e-9);
-  assert.match(c.leftoverText, /11 ovos/);
+  assert.match(c.leftoverText, /1[01] eggs left over/);
 });
 
 test('loose produce is priced by weight including the peel', () => {
-  const c = costFor(FOOD_BY_ID.banana, 240, { sold: 'weight', eur: 1.39 });
-  // 240 g edible / 0.65 edible fraction = ~369 g bought
-  assert.ok(Math.abs(c.costEur - (240 / 0.65 / 1000) * 1.39) < 1e-9);
-  assert.match(c.text, /2 bananas/);
+  const b = FOOD_BY_ID.banana;
+  const c = costFor(b, 240, { sold: 'weight', eur: 1.39 });
+  // 240 g of banana = 2 medium bananas; you pay for them with their peel (36%)
+  assert.match(c.text, /^2 bananas/);
+  assert.ok(Math.abs(c.costEur - ((2 * b.unit.grams) / b.edible / 1000) * 1.39) < 1e-9);
+  assert.ok(Math.abs(c.usedEur - (240 / b.edible / 1000) * 1.39) < 1e-9);
+  // Counter items are rounded up, never below what the plan needs
+  const mince = costFor(FOOD_BY_ID.beef_mince_lean, 360, { sold: 'weight', eur: 9 });
+  assert.equal(mince.text, '~400 g');
+  assert.ok(Math.abs(mince.costEur - 3.6) < 1e-9);
 });
 
 test('your own prices beat estimates and the newest wins', () => {

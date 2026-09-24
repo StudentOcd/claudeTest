@@ -60,6 +60,7 @@ export default {
         ${EXCLUSIONS.map(([k, l]) => html`<label class="check"><input type="checkbox" name="ex_${k}" ${s.exclusions.includes(k) ? 'checked' : ''}> ${l}</label>`)}
         <label class="check"><input type="checkbox" name="lactoseFree" ${s.exclusions.includes('dairy_lf') ? '' : 'checked'}> Lactose-free dairy is OK for me (after testing it)</label>
         <label class="check"><input type="checkbox" name="batchMode" ${s.batchMode ? 'checked' : ''}> Batch cooking: repeat lunch and dinner for 2 days</label>
+        <label class="check"><input type="checkbox" name="useLabelNutrition" ${s.useLabelNutrition !== false ? 'checked' : ''}> Use the nutrition label of the product I buy, when Leve has read it (otherwise the EU reference table, CIQUAL 2025)</label>
         <p class="small"><a href="#/recipes">Favourite or hide recipes</a></p>
         <h3 class="mt">Label checker sensitivity</h3>
         <table class="simple">${TRIGGERS.map((tr) => html`<tr><td>${tr.label}</td><td><select name="tr_${tr.setting}" style="min-height:36px;padding:6px 10px">
@@ -143,7 +144,7 @@ export default {
       const exclusions = Object.keys(d).filter((k) => k.startsWith('ex_') && d[k]).map((k) => k.slice(3));
       if (!d.lactoseFree) exclusions.push('dairy_lf');
       const triggers = Object.fromEntries(Object.keys(d).filter((k) => k.startsWith('tr_')).map((k) => [k.slice(3), d[k]]));
-      await app.saveSettings({ exclusions, batchMode: d.batchMode, triggers });
+      await app.saveSettings({ exclusions, batchMode: d.batchMode, useLabelNutrition: d.useLabelNutrition, triggers });
       toast('Food settings saved');
       return 'render';
     },

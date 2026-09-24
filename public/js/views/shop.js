@@ -4,7 +4,8 @@ import { html, fmt, toast, openModal, formData, modalBody, pageHead, storeChip, 
 import { icon } from '../icons.js';
 import { looksLike } from '../match.js';
 import { crawlCard, foodTile, hasPhotos, productFor, productTile, productsOf } from '../photos.js';
-import { FOOD_BY_ID, formatCount } from '/core/foods.js';
+import { FOOD_BY_ID, formatCount, nutritionOf, nutritionSource, unitLabel, weighedAs } from '/core/foods.js';
+import { checkLabel, compareToReference } from '/core/labels.js';
 import { avoidListFor, categoryUrl, STORE_PRODUCTS } from '/core/products.js';
 import { addDays } from '/core/dates.js';
 
@@ -16,8 +17,13 @@ const BADGE = { pingodoce: 'PD', auchan: 'A', mercadona: 'M' };
 
 function needText(it) {
   const f = FOOD_BY_ID[it.foodId];
-  if (f.unit && it.needUnits) return `${formatCount(Math.ceil(it.needUnits * 4) / 4)} ${it.needUnits <= 1 ? f.unit.name : f.unit.plural}`;
-  return it.needGrams >= 1000 ? `${(it.needGrams / 1000).toFixed(2)} kg` : `${it.needGrams} g`;
+  if (f.unit && it.needUnits) {
+    const n = Math.ceil(it.needUnits * 4) / 4;
+    return `${formatCount(n)} ${unitLabel(f, n)}`;
+  }
+  const state = weighedAs(f);
+  const amount = it.needGrams >= 1000 ? `${(it.needGrams / 1000).toFixed(2)} kg` : `${it.needGrams} g`;
+  return `${amount}${state ? ` ${state}` : ''}`;
 }
 
 // "1 × <long product name>" says nothing the title doesn't: show the pack size instead.
@@ -108,6 +114,7 @@ function openProductModal(foodId, startStore) {
       </div>
       ${f.gut?.note ? html`<div class="callout">${icon('stethoscope')}<div class="small">${f.gut.note}</div></div>` : ''}
       ${avoid.length ? html`<div class="callout warn">${icon('triangle-alert')}<div class="small"><b>Skip these:</b> ${avoid.map((a) => html`<div>${STORE_NAMES[a.store]}: ${a.name}. ${a.reason}</div>`)}</div></div>` : ''}
+      ${nutritionSection(f, current)}
 
       <div class="section-title"><h3>${others.length ? `Other choices at ${STORE_NAMES[store]}` : `Nothing found at ${STORE_NAMES[store]} yet`}</h3></div>
       ${others.length ? html`<div class="product-grid">${others.map((p, i) => pcard(p, i, 'catalog', current))}</div>` : ''}
@@ -189,6 +196,33 @@ function openProductModal(foodId, startStore) {
       redraw();
     },
   });
+}
+
+// Nutrition per 100 g: what the plan uses, this product's label, and the reference table.
+function nutritionSection(f, product) {
+  const used = nutritionOf(f);
+  const src = nutritionSource(f);
+  const label = product?.per100 || null;
+  const check = label ? checkLabel(label, f.per100) : null;
+  const rows = compareToReference(label, f);
+  const usedRow = (key) => Math.round((used[key] ?? 0) * 10) / 10;
+  const srcText = src?.kind === 'label'
+    ? html`Your plan uses the label of <b>${src.name}</b> (${STORE_NAMES[src.store] || src.store}).`
+    : html`Your plan uses <b>${src?.db}</b> #${src?.code}: ${src?.name}.`;
+  return html`<details class="card flat mt" data-remember="nutrition">
+    <summary>${icon('list-checks')} Nutrition per 100 g ${f.unit ? '' : html`<span class="chip" style="margin-left:6px">${weighedAs(f) || 'as sold'}</span>`}</summary>
+    <table class="simple nutri">
+      <tr><th></th><th class="right">Your plan</th><th class="right">This label</th><th class="right">CIQUAL</th></tr>
+      ${rows.map((r) => html`<tr><td>${r.name}</td>
+        <td class="right used">${usedRow(r.key)}${r.key === 'kcal' ? '' : ' g'}</td>
+        <td class="right">${r.label ?? '–'}${r.label !== null && r.diffPct !== null && Math.abs(r.diffPct) >= 10 ? html` <span class="diff" style="color:var(--warn)">${r.diffPct > 0 ? '+' : ''}${r.diffPct}%</span>` : ''}</td>
+        <td class="right muted">${r.ref}</td></tr>`)}
+    </table>
+    <p class="tiny muted mt">${srcText}
+      ${label && !check.ok ? html` This label isn't used: ${check.why}.` : ''}
+      ${!label ? ' No label read for this product yet: Update on the Shop tab reads it from the store page.' : ''}
+      CIQUAL 2025 is the EU food composition table from ANSES; energy and carbohydrates are calculated as on EU labels.</p>
+  </details>`;
 }
 
 // ───────── List ─────────

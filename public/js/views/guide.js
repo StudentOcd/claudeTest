@@ -66,6 +66,15 @@ export default {
           <li>Losing abdominal fat usually improves reflux noticeably.</li>
         </ul>
       </div>
+      <div class="card">
+        <div class="card-head"><h2>Where the numbers come from</h2></div>
+        <ul class="small">
+          <li><b>Nutrition per 100 g:</b> CIQUAL 2025, the national food composition table of ANSES (France), an EU reference. Energy and carbohydrates are calculated exactly as on EU labels (carbohydrates without fibre), so they compare directly with Portuguese packaging. Each food shows its CIQUAL code on its product page.</li>
+          <li><b>Your products' labels win:</b> once Leve has read the nutrition label of the product you buy (Shop → Update), your plan uses it, after checking that its energy matches its protein, carbs and fat and that it isn't a per-portion column. You can switch this off in Settings.</li>
+          <li><b>How to weigh:</b> meat and fish raw, rice, pasta and oats dry, tuna drained, vegetables after peeling. The "≈ cooked" weight is measured from CIQUAL's raw and cooked entries and is only a check for portions cooked in advance.</li>
+          <li><b>Peel, stones and pieces:</b> edible share and weight per piece (egg, banana, orange…) from the USDA food composition database (SR28). The shopping list adds the peel back, so you buy enough.</li>
+        </ul>
+      </div>
       <div class="card flat small muted">This is general guidance, not medical advice. If you have red-flag symptoms (see the Gut tab) or anything worries you, talk to your doctor.</div>`;
   },
   actions: {},

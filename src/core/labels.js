@@ -1,0 +1,87 @@
+// Nutrition from the label of the product you actually buy. A label beats the reference
+// table (it is that exact product), but only once it passes basic checks, because store
+// pages are read automatically and a misread column must never reach your plan.
+
+import { FOODS } from './foods.js';
+import { STORE_PRODUCTS } from './products.js';
+
+const round1 = (x) => Math.round(x * 10) / 10;
+
+/**
+ * Is this per-100 g label complete and self-consistent?
+ * Energy must match its own macros (EU label factors: 4 kcal/g protein and carbohydrate,
+ * 9 fat, 2 fibre) and must not be wildly off the reference food (a per-portion column
+ * or the wrong product).
+ */
+export function checkLabel(per100, reference = null) {
+  if (!per100) return { ok: false, why: 'no nutrition table' };
+  const { kcal, p, f, c } = per100;
+  const fib = per100.fib ?? 0;
+  for (const [k, v] of Object.entries({ kcal, p, f, c })) {
+    if (typeof v !== 'number' || !Number.isFinite(v)) return { ok: false, why: `no ${k === 'c' ? 'carbohydrate' : k === 'p' ? 'protein' : k === 'f' ? 'fat' : 'energy'} value` };
+  }
+  if (kcal < 0 || kcal > 900 || [p, f, c, fib].some((v) => v < 0 || v > 100) || p + f + c + fib > 101) return { ok: false, why: 'values out of range' };
+  const formula = 4 * p + 4 * c + 9 * f + 2 * fib;
+  if (Math.abs(formula - kcal) > Math.max(8, kcal * 0.12)) {
+    return { ok: false, why: `energy (${kcal} kcal) does not match its macros (${Math.round(formula)} kcal)` };
+  }
+  if (reference && reference.kcal > 20) {
+    const ratio = kcal / reference.kcal;
+    if (ratio < 0.6 || ratio > 1.6) return { ok: false, why: `${Math.round((ratio - 1) * 100)}% away from the reference: check the pack` };
+  }
+  return { ok: true, why: '' };
+}
+
+function labelOf(product) {
+  const n = product?.per100;
+  if (!n) return null;
+  return { kcal: n.kcal, p: n.p, f: n.f, c: n.c, fib: n.fib, sugar: n.sugars ?? n.sugar, salt: n.salt };
+}
+
+/**
+ * Nutrition to use per food: the label of the product you buy at your main store (your
+ * pick first, then the researched products), when the label passes the checks.
+ * catalog: /api/catalog, choices: productChoice, stores: settings.stores
+ * Returns { [foodId]: { per100, source: { kind: 'label', store, name, url } } }
+ */
+export function labelNutrition({ catalog = {}, choices = {}, stores = [] } = {}) {
+  const out = {};
+  const products = catalog.products || {};
+  const byUrl = new Map(Object.values(products).filter((p) => p.url).map((p) => [p.url, p]));
+  for (const food of FOODS) {
+    if (!food.source) continue;
+    const candidates = [];
+    for (const store of stores) {
+      const choice = choices?.[food.id]?.[store];
+      if (choice?.url) candidates.push({ ...(byUrl.get(choice.url) || {}), ...choice, store });
+      for (const key of catalog.foods?.[food.id]?.[store] || []) if (products[key]?.mapped) candidates.push(products[key]);
+      for (const p of STORE_PRODUCTS[food.id]?.[store] || []) if (p.per100) candidates.push(p);
+    }
+    for (const p of candidates) {
+      const per100 = labelOf(p);
+      if (!per100 || !checkLabel(per100, food.per100).ok) continue;
+      out[food.id] = {
+        per100: {
+          ...per100,
+          fib: per100.fib ?? food.per100.fib,
+          sugar: per100.sugar ?? food.per100.sugar,
+          salt: per100.salt ?? food.per100.salt,
+        },
+        source: { kind: 'label', store: p.store, name: p.name, url: p.url || null },
+      };
+      break;
+    }
+  }
+  return out;
+}
+
+/** Label vs reference, for display: { key, label, ref, diffPct }[] */
+export function compareToReference(per100, food) {
+  const keys = [['kcal', 'Energy', 'kcal'], ['p', 'Protein', 'g'], ['c', 'Carbohydrate', 'g'], ['f', 'Fat', 'g'], ['fib', 'Fibre', 'g'], ['salt', 'Salt', 'g']];
+  return keys.map(([key, name, unit]) => {
+    const label = per100?.[key];
+    const ref = food.per100[key];
+    const diffPct = typeof label === 'number' && ref ? Math.round(((label - ref) / ref) * 100) : null;
+    return { key, name, unit, label: typeof label === 'number' ? round1(label) : null, ref: round1(ref ?? 0), diffPct };
+  });
+}

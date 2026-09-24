@@ -134,7 +134,8 @@ export function computeTargets(profile, { phase = 2, weightKg, tdee: tdeeOverrid
 
   const protein = profile.proteinOverride || proteinTarget(w, profile.heightCm);
   const fat = Math.max(45, round((kcal * 0.28) / 9));
-  const carbs = Math.max(0, round((kcal - protein * 4 - fat * 9) / 4));
+  // Carbohydrates as on EU labels (without fibre): fibre brings its own 2 kcal/g.
+  const carbs = Math.max(0, round((kcal - protein * 4 - fat * 9 - phaseInfo.fibreG * 2) / 4));
 
   return {
     kcal,

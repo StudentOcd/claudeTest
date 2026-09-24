@@ -3,7 +3,7 @@ import { api } from '../api.js';
 import { html, fmt, toast, bar, ring, formData, remembered, openAttr } from '../ui.js';
 import { icon } from '../icons.js';
 import { crawlCard, mealCollage } from '../photos.js';
-import { FOOD_BY_ID, describeAmount } from '/core/foods.js';
+import { FOOD_BY_ID, amountParts, isSeasoning, plainName } from '/core/foods.js';
 import { LIFESTYLES, PACES } from '/core/nutrition.js';
 import { intakeFromLog, mealSnapshot } from '/core/planner.js';
 import { weeklyRate } from '/core/weight.js';
@@ -133,10 +133,16 @@ function weighCard(date) {
     </form>`;
 }
 
+// "150 g chicken breast fillets (raw) · 95 g long-grain white rice (dry) · 2 eggs"
 export function ingredientLine(items) {
   return items
-    .filter((i) => i.g > 0 && FOOD_BY_ID[i.food].per100.kcal > 0)
-    .map((i) => `${describeAmount(FOOD_BY_ID[i.food], i.g)} ${FOOD_BY_ID[i.food].name.toLowerCase()}`)
+    .filter((i) => i.g > 0 && !isSeasoning(FOOD_BY_ID[i.food]))
+    .map((i) => {
+      const f = FOOD_BY_ID[i.food];
+      const a = amountParts(f, i.g);
+      if (f.unit) return a.qty;
+      return `${a.qty} ${plainName(f).toLowerCase()}${a.state ? ` (${a.state})` : ''}`;
+    })
     .join(' · ');
 }
 

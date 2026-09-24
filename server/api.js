@@ -96,6 +96,7 @@ function validateSettings(body, current) {
   if ('shoppingDays' in body) out.shoppingDays = number(body.shoppingDays, 'shopping days', { min: 1, max: 14, int: true });
   if ('batchMode' in body) out.batchMode = bool(body.batchMode, 'batch mode');
   if ('liveStoreLookups' in body) out.liveStoreLookups = bool(body.liveStoreLookups, 'live store lookups');
+  if ('useLabelNutrition' in body) out.useLabelNutrition = bool(body.useLabelNutrition, 'label nutrition');
   if ('hevyAutoPushWeight' in body) out.hevyAutoPushWeight = bool(body.hevyAutoPushWeight, 'Hevy weight sync');
   if ('contactEmail' in body) out.contactEmail = text(body.contactEmail, 'contact email', 120);
   if ('appearance' in body) {
