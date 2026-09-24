@@ -401,7 +401,8 @@ export function parseProductPage(html, url = '') {
     if (m) price = parseEuro(m[1]);
   }
   const shelf = shelfMeasures(src, price);
-  const unitPrice = shelf?.unitPrice || parseUnitPrice(text);
+  let unitPrice = shelf?.unitPrice || parseUnitPrice(text);
+  if (!(unitPrice?.eur > 0)) unitPrice = null; // "0,00 €/Kg": not sold online right now
   const eanText = text.match(/\b(?:EAN(?:-?13)?|GTIN|C[oó]digo(?: de barras| EAN)?)\s*:?\s*(\d{8,14})\b/i);
   return {
     url,
