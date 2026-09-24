@@ -1,5 +1,5 @@
 import { app } from '../app.js';
-import { html, fmt } from '../ui.js';
+import { html, fmt, pageHead } from '../ui.js';
 import { PHASES, computeTargets } from '/core/nutrition.js';
 
 export default {
@@ -8,13 +8,13 @@ export default {
     const p1 = computeTargets(app.profile, { phase: 1, weightKg: app.currentWeight() });
     const p2 = computeTargets(app.profile, { phase: 2, weightKg: app.currentWeight() });
     return html`
-      <div class="card">
-        <h1>The plan explained</h1>
-        <p>Lose fat steadily without wrecking your gut, your energy or your gym progress. Three ideas do most of the work:
+      ${pageHead('The plan explained', 'Guide')}
+      <div class="hero">
+        <p style="margin:0">Lose fat steadily without wrecking your gut, your energy or your gym progress. Three ideas do most of the work:
           <b>a moderate calorie deficit</b>, <b>plenty of protein</b> and <b>lifting 3× a week</b>, all with simple, predictable food.</p>
       </div>
       <div class="card">
-        <h2>Your numbers</h2>
+        <div class="card-head"><h2>Your numbers</h2></div>
         <dl class="kv">
           <dt>Maintenance (estimate)</dt><dd>~${fmt.kcal(t.tdee)} kcal/day</dd>
           <dt>Weeks 1–2 (phase 1)</dt><dd><b>${fmt.kcal(p1.kcal)} kcal</b>: a small deficit while your gut adjusts</dd>
@@ -28,11 +28,11 @@ export default {
           From week 3 the weekly check-in adjusts calories from your real trend: aim for 0.5–1% of body weight per week.</p>
       </div>
       <div class="card">
-        <h2>Phases (gradual transition)</h2>
+        <div class="card-head"><h2>Phases (gradual transition)</h2></div>
         ${[1, 2, 3].map((n) => html`<p><b>Phase ${n}: ${PHASES[n].name}</b> (weeks ${PHASES[n].weeks}). ${PHASES[n].summary}</p>`)}
       </div>
       <div class="card">
-        <h2>Daily rhythm</h2>
+        <div class="card-head"><h2>Daily rhythm</h2></div>
         <ul class="small">
           <li>4 regular meals (breakfast, lunch, snack, dinner), none huge. Similar times every day.</li>
           <li>Protein at every meal: chicken, turkey, fish, tuna, eggs, egg whites, lean pork or beef.</li>
@@ -43,13 +43,13 @@ export default {
         </ul>
       </div>
       <div class="card">
-        <h2>Training</h2>
+        <div class="card-head"><h2>Training</h2></div>
         <p class="small">Full-body strength sessions 3× per week (routines A and B on the Gym tab, which Leve can create in Hevy).
           3 sets of 8–12 reps, 1–2 reps short of failure, add weight when you hit the top of the range.
           Walk every day and build up to 7,000–8,000 steps. Lifting + protein is what makes the weight you lose fat, not muscle.</p>
       </div>
       <div class="card">
-        <h2>Hunger & cravings</h2>
+        <div class="card-head"><h2>Hunger & cravings</h2></div>
         <ul class="small">
           <li>Big volume, few calories: potatoes, soup, cooked vegetables, fruit, lean protein.</li>
           <li>Don't skip meals and then binge: regularity is your friend (and your gut's).</li>
@@ -59,7 +59,7 @@ export default {
         </ul>
       </div>
       <div class="card">
-        <h2>Reflux</h2>
+        <div class="card-head"><h2>Reflux</h2></div>
         <ul class="small">
           <li>Smaller dinners, earlier; don't lie down for 2–3 hours after eating.</li>
           <li>Limit very fatty meals, chilli, tomato-heavy sauces, citrus on an empty stomach, fizzy drinks, alcohol, lots of coffee.</li>

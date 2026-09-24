@@ -11,7 +11,8 @@
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
     "test": "node --test",
-    "check:connectors": "node scripts/check-connectors.js"
+    "check:connectors": "node scripts/check-connectors.js",
+    "crawl": "node scripts/crawl-stores.js"
   },
   "license": "MIT"
 }

@@ -9,7 +9,7 @@ const offline = async () => new Response('offline', { status: 599 });
 
 async function boot(opts = {}) {
   const dataDir = mkdtempSync(path.join(tmpdir(), 'leve-test-'));
-  const app = await startServer({ port: 0, dataDir, quiet: true, fetchImpl: offline, ...opts });
+  const app = await startServer({ port: 0, dataDir, quiet: true, fetchImpl: offline, autoCrawl: false, ...opts });
   const base = `http://127.0.0.1:${app.port}`;
   const call = async (method, p, body, headers = {}) => {
     const res = await fetch(base + p, {

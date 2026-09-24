@@ -1,11 +1,16 @@
 import { app } from '../app.js';
 import { api } from '../api.js';
-import { html, fmt, toast, openModal, STORE_NAMES } from '../ui.js';
-import { FOODS, FOOD_BY_ID } from '/core/foods.js';
+import { html, fmt, toast, openModal, pageHead, storeChip, STORE_NAMES } from '../ui.js';
+import { icon } from '../icons.js';
+import { looksLike } from '../match.js';
+import { foodTile, productFor, productTile } from '../photos.js';
+import { openProductModal } from './shop.js';
+import { FOODS, FOOD_BY_ID, SECTIONS } from '/core/foods.js';
 import { scanProduct } from '/core/gut.js';
 
 let lastResults = [];
 let lastQuery = { q: '', source: 'pingodoce' };
+let section = 'all';
 let scanning = null;
 
 const VERDICT = {
@@ -19,12 +24,12 @@ const VERDICT = {
 function verdictBadge(gut) {
   if (!gut) return '';
   const [cls, label] = VERDICT[gut.verdict] || VERDICT.unknown;
-  return html`<span class="badge ${cls}">${label}</span>`;
+  return html`<span class="chip ${cls}">${icon(cls === 'ok' ? 'circle-check' : cls === 'danger' || cls === 'warn' ? 'triangle-alert' : 'info')} ${label}</span>`;
 }
 
 function flagsList(gut) {
   if (!gut?.flags?.length) return '';
-  return html`<ul class="small">${gut.flags.map((f) => html`<li><b>${f.label}</b>${f.matches.length ? `: ${f.matches.join(', ')}` : ''}</li>`)}</ul>`;
+  return html`<ul class="small" style="margin:8px 0 0;padding-left:18px">${gut.flags.map((f) => html`<li><b>${f.label}</b>${f.matches.length ? `: ${f.matches.join(', ')}` : ''}</li>`)}</ul>`;
 }
 
 function nutritionTable(per100) {
@@ -52,17 +57,19 @@ async function showStoreProduct(store, url) {
   }
   openModal(
     p.name || 'Product',
-    html`<div class="row">${p.image ? html`<img class="thumb" src="${p.image}" alt="">` : ''}
-        <div class="grow"><div><b>${p.name}</b></div><div class="small muted">${STORE_NAMES[store]} ${p.brand ? `· ${p.brand}` : ''} ${p.ean ? `· EAN ${p.ean}` : ''}</div>
-          <div><span class="price">${fmt.eur(p.price)}</span> ${p.unitPrice ? html`<span class="small muted">(${fmt.eur(p.unitPrice.eur)}/${p.unitPrice.per})</span>` : ''}</div></div></div>
+    html`${productTile({ ...p, image: p.photo || p.image, store }, { size: 'xl' })}
+      <div class="row between top mt">
+        <div class="grow">${storeChip(store)}<h2 style="margin-top:6px">${p.name}</h2><div class="small muted">${p.brand || ''} ${p.ean ? `· EAN ${p.ean}` : ''}</div></div>
+        <div class="right"><div class="price" style="font-size:1.3rem">${fmt.eur(p.price)}</div>${p.unitPrice ? html`<div class="price-sub">${fmt.eur(p.unitPrice.eur)}/${p.unitPrice.per}</div>` : ''}</div>
+      </div>
       <div class="mt">${verdictBadge(p.gut)}${flagsList(p.gut)}</div>
       ${p.ingredientsText ? html`<p class="small"><b>Ingredients:</b> ${p.ingredientsText}</p>` : ''}
       ${nutritionTable(p.per100)}
       <form class="row mt" data-submit="link">
-        <select name="food" required>${foodOptions()}</select>
-        <button class="btn primary" type="submit">Use this product</button>
+        <select name="food" required>${foodOptions(p.foodId)}</select>
+        <button class="btn primary" type="submit">Use it</button>
       </form>
-      <p class="tiny muted mt"><a href="${url}" target="_blank" rel="noopener">Open on ${STORE_NAMES[store]}</a></p>`,
+      <a class="btn outline small mt" href="${url}" target="_blank" rel="noopener">${icon('external-link', 'sm')} Open on ${STORE_NAMES[store]}</a>`,
     {
       async link(form, _e, close) {
         const foodId = form.elements.food.value;
@@ -95,12 +102,12 @@ async function showBarcode(code) {
     const latest = Object.values(p.latestByStore || {});
     openModal(
       p.name || code,
-      html`<div class="row">${p.image ? html`<img class="thumb" src="${p.image}" alt="">` : ''}
-          <div class="grow"><b>${p.name}</b><div class="small muted">${p.brand} ${p.quantity ? `· ${p.quantity}` : ''} · EAN ${p.code}</div></div></div>
+      html`${p.image ? html`<div class="ph xl"><img src="${p.image}" alt="${p.name || ''}"></div>` : ''}
+        <h2 class="mt">${p.name}</h2><div class="small muted">${p.brand} ${p.quantity ? `· ${p.quantity}` : ''} · EAN ${p.code}</div>
         <div class="mt">${verdictBadge(p.gut)}${flagsList(p.gut)}</div>
         ${p.ingredientsText ? html`<p class="small"><b>Ingredients:</b> ${p.ingredientsText}</p>` : ''}
         ${nutritionTable(p.per100)}
-        <h3 class="mt">Prices seen near ${app.settings.location.label || 'you'} (Open Prices)</h3>
+        <div class="section-title"><h3>Prices seen near ${app.settings.location.label || 'you'}</h3></div>
         ${latest.length ? html`<table class="simple">${latest.map((x) => html`<tr><td>${STORE_NAMES[x.store] || x.storeName}</td><td>${x.date}</td><td class="right">${fmt.eur(x.eur)}${x.discounted ? ' (promo)' : ''}</td></tr>`)}</table>`
           : html`<p class="small muted">No prices shared yet. You can add prices from receipts at prices.openfoodfacts.org.</p>`}
         <p class="tiny muted mt">Data: Open Food Facts & Open Prices (ODbL). <a href="${p.url}" target="_blank" rel="noopener">View on Open Food Facts</a></p>`,
@@ -144,43 +151,69 @@ async function startCamera() {
   }, 400);
 }
 
+function foodGrid() {
+  const foods = FOODS.filter((f) => !f.buy.pantry && f.per100.kcal > 0 && (section === 'all' || f.section === section));
+  const main = app.settings.stores[0];
+  return html`<div class="product-grid">${foods.map((f) => {
+    const p = productFor(f.id, main) || productFor(f.id, 'pingodoce') || productFor(f.id, 'auchan');
+    return html`<button type="button" class="pcard" data-action="food" data-food="${f.id}" data-store="${p?.store || main}">
+      ${foodTile(f.id, { store: main, storeTag: true })}
+      <div class="name">${f.name}</div>
+      <div class="price-sub" style="white-space:normal">${p?.name || f.en}</div>
+    </button>`;
+  })}</div>`;
+}
+
 export default {
   render() {
     const src = lastQuery.source;
+    const sections = Object.entries(SECTIONS).filter(([k]) => FOODS.some((f) => f.section === k && !f.buy.pantry && f.per100.kcal > 0));
     return html`
-      <div class="card">
-        <h1>Find products</h1>
-        <p class="small muted">Search Pingo Doce and Auchan (live prices from their websites) or Open Food Facts (all three chains, including Mercadona's Hacendado),
-          and check labels for your gut triggers.</p>
-        <form data-submit="search">
-          <div class="row"><input class="grow" name="q" placeholder="e.g. atum ao natural, pão de forma" value="${lastQuery.q}" required>
-            <button class="btn primary" type="submit">Search</button></div>
-          <div class="tabs mt">
-            ${[['pingodoce', 'Pingo Doce'], ['auchan', 'Auchan'], ['off-mercadona', 'Mercadona (OFF)'], ['off', 'Open Food Facts']].map(
-              ([k, l]) => html`<button type="button" class="btn small ${src === k ? 'on' : ''}" data-action="source" data-value="${k}">${l}</button>`,
-            )}
-          </div>
-        </form>
+      ${pageHead('Products', 'Pingo Doce · Auchan · Mercadona')}
+      <form class="card" data-submit="search">
+        <div class="row"><input class="grow" name="q" placeholder="Search: atum ao natural, pão de forma…" value="${lastQuery.q}" required aria-label="Search products">
+          <button class="icon-btn" style="background:var(--brand);color:var(--on-brand)" type="submit" aria-label="Search">${icon('search')}</button></div>
+        <div class="days mt" style="padding-bottom:0">
+          ${[['pingodoce', 'Pingo Doce'], ['auchan', 'Auchan'], ['off-mercadona', 'Mercadona'], ['off', 'Any brand']].map(
+            ([k, l]) => html`<button type="button" class="chip ${src === k ? 'brand' : ''}" data-action="source" data-value="${k}">${k === 'off' ? '' : html`<i class="dot store store-${k.replace('off-', '')}"></i>`}${l}</button>`,
+          )}
+        </div>
         <div data-results>${renderResults()}</div>
+      </form>
+
+      <div class="section-title"><h2>Your plan's products</h2></div>
+      <div class="days" style="margin-bottom:6px">
+        <button type="button" class="chip ${section === 'all' ? 'brand' : ''}" data-action="section" data-value="all">All</button>
+        ${sections.map(([k, label]) => html`<button type="button" class="chip ${section === k ? 'brand' : ''}" data-action="section" data-value="${k}">${label.replace(/ \(.*\)$/, '')}</button>`)}
       </div>
+      ${foodGrid()}
+
+      <div class="section-title"><h2>Check a product</h2></div>
       <div class="card">
-        <h2>Check a barcode</h2>
-        <p class="small muted">Gut check + nutrition + prices near you, from the numbers under any barcode.</p>
+        <div class="card-head"><span class="tile-ic">${icon('scan-barcode')}</span><h3>Barcode</h3></div>
+        <p class="small muted">Gut check, nutrition and prices near you from the numbers under any barcode.</p>
         <form class="row" data-submit="barcode">
-          <input class="grow" name="code" inputmode="numeric" pattern="[0-9]{6,14}" placeholder="5601234567890" required>
+          <input class="grow" name="code" inputmode="numeric" pattern="[0-9]{6,14}" placeholder="5601234567890" required aria-label="Barcode number">
           <button class="btn" type="submit">Look up</button>
-          <button class="btn" type="button" data-action="camera">📷</button>
+          <button class="icon-btn" type="button" data-action="camera" aria-label="Scan with camera">${icon('camera')}</button>
         </form>
       </div>
       <div class="card">
-        <h2>Check any label</h2>
-        <p class="small muted">Paste or type an ingredient list (Portuguese, Spanish or English).</p>
-        <form data-submit="label"><textarea name="text" rows="3" placeholder="Ingredientes: ..."></textarea><button class="btn mt" type="submit">Check</button></form>
+        <div class="card-head"><span class="tile-ic">${icon('list-checks')}</span><h3>Ingredient list</h3></div>
+        <p class="small muted">Paste or type the ingredients (Portuguese, Spanish or English).</p>
+        <form data-submit="label"><textarea name="text" rows="3" placeholder="Ingredientes: ..." aria-label="Ingredients"></textarea><button class="btn mt" type="submit">Check</button></form>
         <div data-label-result></div>
       </div>`;
   },
 
   actions: {
+    section(el) {
+      section = el.dataset.value;
+      return 'render';
+    },
+    food(el) {
+      openProductModal(el.dataset.food, el.dataset.store);
+    },
     source(el) {
       lastQuery.source = el.dataset.value;
       return 'render';
@@ -188,14 +221,14 @@ export default {
     async search(form) {
       lastQuery.q = form.elements.q.value.trim();
       const target = document.querySelector('[data-results]');
-      target.innerHTML = '<p class="small"><span class="spinner"></span> Searching…</p>';
+      target.innerHTML = '<p class="small mt"><span class="spinner"></span> Searching…</p>';
       const src = lastQuery.source;
       try {
         if (src === 'pingodoce' || src === 'auchan') {
           const res = await api.get(`/api/stores/search?store=${src}&q=${encodeURIComponent(lastQuery.q)}`);
           lastResults = res.items.map((x) => ({ ...x, kind: 'store' }));
           if (!lastResults.length) {
-            target.innerHTML = String(html`<div class="notice warn">No results from ${STORE_NAMES[src]}.
+            target.innerHTML = String(html`<div class="notice warn mt">No results from ${STORE_NAMES[src]}.
               ${res.tried.map((t) => html`<div class="tiny">${t.error || `${t.count} results`}</div>`)}
               <a href="${res.browserUrl}" target="_blank" rel="noopener">Open the search on ${STORE_NAMES[src]}</a></div>`);
             return;
@@ -206,7 +239,7 @@ export default {
           lastResults = res.map((x) => ({ ...x, kind: 'off' }));
         }
       } catch (err) {
-        target.innerHTML = String(html`<div class="notice warn">${err.message}</div>`);
+        target.innerHTML = String(html`<div class="notice warn mt">${err.message}</div>`);
         return;
       }
       target.innerHTML = String(renderResults());
@@ -232,15 +265,13 @@ export default {
 
 function renderResults() {
   if (!lastResults.length) return '';
-  return html`<ul class="list mt">${lastResults.map(
-    (r, i) => html`<li class="row">
-      ${r.image ? html`<img class="thumb" src="${r.image}" alt="" loading="lazy">` : ''}
-      <div class="grow"><b>${r.name || '(no name)'}</b>
-        <div class="small muted">${r.kind === 'store' ? STORE_NAMES[r.store] : r.brand || ''} ${r.unitPrice ? `· ${fmt.eur(r.unitPrice.eur)}/${r.unitPrice.per}` : ''}
-          ${r.kind === 'off' && r.per100?.kcal != null ? `· ${r.per100.kcal} kcal, ${r.per100.p ?? '?'} g protein /100 g` : ''}</div>
-        ${r.gut ? verdictBadge(r.gut) : ''}</div>
-      <div class="right">${r.price ? html`<div class="price">${fmt.eur(r.price)}</div>` : ''}<button class="btn small" data-action="open" data-index="${i}">Details</button></div>
-    </li>`,
-  )}</ul>`;
+  return html`<div class="product-grid mt">${lastResults.map(
+    (r, i) => html`<button type="button" class="pcard" data-action="open" data-index="${i}">
+      ${productTile({ ...r, image: r.image }, {})}
+      <div class="name">${r.name || '(no name)'}</div>
+      <div class="price-sub" style="white-space:normal">${r.kind === 'store' ? STORE_NAMES[r.store] : r.brand || ''}${r.kind === 'off' && r.per100?.kcal != null ? ` · ${r.per100.kcal} kcal, ${r.per100.p ?? '?'} g P` : ''}</div>
+      <div class="row between" style="gap:4px"><span class="price" style="font-size:.95rem">${r.price ? fmt.eur(r.price) : ''}</span><span class="price-sub">${r.unitPrice ? `${fmt.eur(r.unitPrice.eur)}/${r.unitPrice.per}` : ''}</span></div>
+      ${r.gut ? verdictBadge(r.gut) : ''}
+    </button>`,
+  )}</div>`;
 }
-

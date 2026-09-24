@@ -88,6 +88,22 @@ test('product links without data-pid (Pingo Doce style)', () => {
   assert.deepEqual(tiles[1].unitPrice, { eur: 1.29, per: 'kg' });
 });
 
+test('a photo placed before the product link stays with that product', () => {
+  const list = `<ul>
+    <li class="tile"><div class="img"><img src="https://www.pingodoce.pt/img/peru.jpg" alt=""></div>
+      <a href="/home/produtos/talho/peito-bife-de-peru-442057.html"><span class="product-name">Peito/Bife de Peru</span></a> <span class="price">8,99 €</span></li>
+    <li class="tile"><div class="img"><img src="https://www.pingodoce.pt/img/batata.jpg" alt=""></div>
+      <a href="/home/produtos/frescos/batata-para-cozer-454634.html"><span class="product-name">Batata para Cozer</span></a> <span class="price">3,69 €</span></li>
+  </ul>`;
+  const tiles = parseProductTiles(list, STORE_SITES.pingodoce);
+  assert.equal(tiles.length, 2);
+  assert.equal(tiles[0].id, '442057');
+  assert.equal(tiles[0].image, 'https://www.pingodoce.pt/img/peru.jpg');
+  assert.equal(tiles[1].id, '454634');
+  assert.equal(tiles[1].image, 'https://www.pingodoce.pt/img/batata.jpg');
+  assert.equal(tiles[1].price, 3.69);
+});
+
 const PRODUCT_PAGE = `<html><head>
 <meta property="og:title" content="Atum Ao Natural Auchan 185(130)g | Auchan">
 <script type="application/ld+json">{"@context":"https://schema.org","@type":"Product","name":"Atum Ao Natural Auchan 185(130)g","brand":{"@type":"Brand","name":"AUCHAN"},"gtin13":"5601234567890","offers":{"@type":"Offer","price":"1.79","priceCurrency":"EUR","availability":"https://schema.org/InStock"}}</script>
@@ -134,6 +150,15 @@ test('product page without JSON-LD falls back to markup and text', () => {
   const entry = priceEntryFromProduct({ ...p, store: 'auchan' }, { sold: 'weight' });
   assert.equal(entry.sold, 'weight');
   assert.equal(entry.eur, 6.29);
+});
+
+test('product photo: own gallery or id match, never a related product', () => {
+  const related = '<h1>Atum</h1><div class="related"><img src="https://www.auchan.pt/img/999.jpg"></div>';
+  assert.equal(parseProductPage(related, 'https://www.auchan.pt/pt/x/1071642.html').image, null);
+  const gallery = '<div class="primary-image"><img src="data:image/gif;base64,xx" data-src="/dw/image/big.jpg"></div><img src="/img/999.jpg">';
+  assert.equal(parseProductPage(gallery, 'https://www.auchan.pt/pt/x/1071642.html').image, 'https://www.auchan.pt/dw/image/big.jpg');
+  const byId = '<img src="/logo.png"><img src="https://cdn.example/p/1071642_1.jpg">';
+  assert.equal(parseProductPage(byId, 'https://www.auchan.pt/pt/x/1071642.html').image, 'https://cdn.example/p/1071642_1.jpg');
 });
 
 test('nutrition text in kJ only and ingredient cut-off', () => {

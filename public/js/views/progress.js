@@ -1,6 +1,7 @@
 import { app } from '../app.js';
 import { api } from '../api.js';
-import { html, raw, fmt, toast } from '../ui.js';
+import { html, raw, fmt, toast, pageHead } from '../ui.js';
+import { icon } from '../icons.js';
 import { weightChart } from '../charts.js';
 import { trendSeries, weeklyRate, weeklyAverages } from '/core/weight.js';
 import { addDays } from '/core/dates.js';
@@ -24,35 +25,37 @@ export default {
     const weeks = weeklyAverages(app.state.weights).slice(-8).reverse();
     const goal = app.profile.goalWeightKg;
     const heightCm = app.profile.heightCm;
+    const REC = { calories: ['warn', 'flame'], good: ['', 'circle-check'], gut: ['info', 'stethoscope'], info: ['info', 'info'], phase: ['', 'sparkles'], training: ['warn', 'dumbbell'] };
+    const lost = first && last ? last.trend - first.kg : null;
     return html`
+      ${pageHead('Progress', 'Weight trend', html`<div class="seg">${[['4w', '4 wk'], ['12w', '12 wk'], ['all', 'All']].map(([k, l]) => html`<a class="${range === k ? 'on' : ''}" href="#/progress?range=${k}">${l}</a>`)}</div>`)}
       <div class="card">
-        <div class="card-head"><h1>Progress</h1></div>
-        <div class="tabs">${[['4w', '4 weeks'], ['12w', '12 weeks'], ['all', 'All']].map(([k, l]) => html`<a class="btn small ${range === k ? 'on' : ''}" href="#/progress?range=${k}">${l}</a>`)}</div>
-        ${raw(weightChart(shown, { goal }))}
-        <p class="tiny muted">Dots = daily weigh-ins (noisy: water, salt, digestion). Line = trend. Judge progress by the line.</p>
-        <div class="grid3 mt">
-          <div class="stat"><div class="v">${last ? fmt.kg(last.trend) : '–'}</div><div class="l">trend weight</div></div>
-          <div class="stat"><div class="v">${first && last ? fmt.signed(last.trend - first.kg, 1) : '–'} kg</div><div class="l">since start</div></div>
-          <div class="stat"><div class="v">${rate ? fmt.signed(rate.kgPerWeek, 2) : '–'}</div><div class="l">kg / week (${rate ? `${fmt.signed(rate.pctPerWeek, 2)}%` : 'need 4+ weigh-ins'})</div></div>
-          <div class="stat"><div class="v">${last ? bmi(last.trend, heightCm).toFixed(1) : '–'}</div><div class="l">BMI</div></div>
-          <div class="stat"><div class="v">${fmt.kcal(t.kcal)}</div><div class="l">kcal target</div></div>
-          <div class="stat"><div class="v">${fromData ? fmt.kcal(fromData.tdee) : fmt.kcal(t.tdee)}</div><div class="l">maintenance ${fromData ? '(from your data)' : '(formula)'}</div></div>
+        <div class="row between top">
+          <div><div class="eyebrow">Trend weight</div><div style="font-size:2.2rem;font-weight:800;letter-spacing:-.03em;line-height:1.1">${last ? fmt.kg(last.trend) : '–'}</div></div>
+          <div class="right">${lost !== null ? html`<span class="chip ${lost <= 0 ? 'ok' : 'warn'}">${icon(lost <= 0 ? 'trending-down' : 'trending-up')} ${fmt.signed(lost, 1)} kg since start</span>` : ''}
+            ${rate ? html`<div class="tiny muted mt">${fmt.signed(rate.kgPerWeek, 2)} kg/week (${fmt.signed(rate.pctPerWeek, 2)}%)</div>` : ''}</div>
         </div>
+        <div class="mt">${raw(weightChart(shown, { goal }))}</div>
+        <p class="tiny muted">Dots are daily weigh-ins (water, salt and digestion make them jump). The line is the trend: judge progress by the line.</p>
+      </div>
+      <div class="grid3 mb">
+        <div class="stat"><div class="v">${last ? bmi(last.trend, heightCm).toFixed(1) : '–'}</div><div class="l">BMI</div></div>
+        <div class="stat"><div class="v">${fmt.kcal(t.kcal)}</div><div class="l">kcal target</div></div>
+        <div class="stat"><div class="v">${fromData ? fmt.kcal(fromData.tdee) : fmt.kcal(t.tdee)}</div><div class="l">maintenance${fromData ? ' (your data)' : ''}</div></div>
       </div>
 
-      <div class="card recs">
-        <div class="card-head"><h2>Weekly check-in</h2></div>
-        ${check.recommendations.map(
-          (r) => html`<div class="rec ${r.kind}"><b>${r.title}</b><div class="small">${r.detail}</div>
-            ${r.action ? html`<button class="btn small mt" data-action="apply" data-type="${r.action.type}" data-value="${r.action.delta ?? r.action.to}">
-              ${r.action.type === 'calories' ? `Apply ${r.action.delta > 0 ? '+' : ''}${r.action.delta} kcal` : `Move to phase ${r.action.to}`}</button>` : ''}</div>`,
-        )}
-        ${check.recommendations.length ? '' : html`<p class="small">Nothing to change. Keep going!</p>`}
-        <p class="tiny muted">Current adjustment: ${fmt.signed(app.profile.calorieAdjustment || 0, 0)} kcal. Phase ${app.phase()} (${PHASES[app.phase()].name}) since ${fmt.date(app.profile.phaseSince)}.</p>
-      </div>
+      <div class="section-title"><h2>Weekly check-in</h2></div>
+      ${check.recommendations.map((r) => {
+        const [cls, ic] = REC[r.kind] || REC.info;
+        return html`<div class="callout ${cls}" style="margin:0 0 10px">${icon(ic)}<div class="grow"><b>${r.title}</b><div class="small">${r.detail}</div>
+          ${r.action ? html`<button class="btn small primary mt" data-action="apply" data-type="${r.action.type}" data-value="${r.action.delta ?? r.action.to}">
+            ${r.action.type === 'calories' ? `Apply ${r.action.delta > 0 ? '+' : ''}${r.action.delta} kcal` : `Move to phase ${r.action.to}`}</button>` : ''}</div></div>`;
+      })}
+      ${check.recommendations.length ? '' : html`<div class="callout">${icon('circle-check')}<div>Nothing to change. Keep going!</div></div>`}
+      <p class="tiny muted" style="margin:0 4px 14px">Adjustment ${fmt.signed(app.profile.calorieAdjustment || 0, 0)} kcal · phase ${app.phase()} (${PHASES[app.phase()].name}) since ${fmt.date(app.profile.phaseSince)}</p>
 
       <div class="card">
-        <h2>Your targets</h2>
+        <div class="card-head"><h2>Your targets</h2></div>
         <dl class="kv">
           <dt>Resting burn (BMR)</dt><dd>${fmt.kcal(t.bmr)} kcal</dd>
           <dt>Maintenance (estimate)</dt><dd>${fmt.kcal(t.tdee)} kcal</dd>
@@ -66,10 +69,10 @@ export default {
         <p class="tiny muted mt">Water weight moves the scale in the first 1–2 weeks, so calorie changes only start from week 3, based on your trend.</p>
       </div>
 
-      ${waist.length ? html`<div class="card"><h2>Waist (cm)</h2>${raw(weightChart(waist, { unit: 'cm', height: 160 }))}</div>` : ''}
+      ${waist.length ? html`<div class="card"><div class="card-head"><h2>Waist</h2><span class="chip">cm</span></div>${raw(weightChart(waist, { unit: 'cm', height: 160 }))}</div>` : ''}
 
       <div class="card">
-        <h2>Weekly averages</h2>
+        <div class="card-head"><h2>Weekly averages</h2></div>
         <table class="simple"><tr><th>Week of</th><th>Avg</th><th>Change</th><th>Weigh-ins</th><th>Waist</th></tr>
           ${weeks.map((w, i) => html`<tr><td>${fmt.date(w.week)}</td><td>${fmt.kg(w.avgKg)}</td>
             <td>${weeks[i + 1] ? fmt.signed(w.avgKg - weeks[i + 1].avgKg, 2) : ''}</td><td>${w.count}</td><td>${w.waistCm ?? ''}</td></tr>`)}
@@ -77,10 +80,10 @@ export default {
       </div>
 
       <details class="card">
-        <summary>All weigh-ins (${app.state.weights.length})</summary>
+        <summary>${icon('scale')} All weigh-ins <span class="chip" style="margin-left:6px">${app.state.weights.length}</span></summary>
         <ul class="list">${[...app.state.weights].reverse().slice(0, 120).map(
-          (w) => html`<li class="row between"><span>${fmt.date(w.date)}</span><span>${fmt.kg(w.kg)}${w.waistCm ? ` · ${w.waistCm} cm` : ''}${w.source === 'hevy' ? html` <span class="badge">Hevy</span>` : ''}
-            <button class="link-btn small" data-action="delete-weight" data-date="${w.date}">delete</button></span></li>`,
+          (w) => html`<li class="row between"><span>${fmt.date(w.date)}</span><span>${fmt.kg(w.kg)}${w.waistCm ? ` · ${w.waistCm} cm` : ''}${w.source === 'hevy' ? html` <span class="chip">Hevy</span>` : ''}
+            <button class="mini-btn" style="display:inline-grid;vertical-align:middle;margin-left:6px" data-action="delete-weight" data-date="${w.date}" aria-label="Delete">${icon('trash-2')}</button></span></li>`,
         )}</ul>
         <form class="row mt" data-submit="add-weight">
           <input name="date" type="date" max="${app.today()}" required>

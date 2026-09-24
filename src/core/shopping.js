@@ -54,7 +54,7 @@ function offerFor(f, prices, store) {
     packG: p.packG ?? (p.sold === 'pack' || !p.sold ? f.buy.packG : undefined),
     packUnits: p.packUnits ?? (f.unit && f.buy.packUnits ? f.buy.packUnits : undefined),
     packLabel: p.packLabel || p.productName || f.buy.packLabel,
-    estimated: false,
+    estimated: p.source === 'mercadona-es',
     source: p.source || 'manual',
     date: p.date,
     productName: p.productName,

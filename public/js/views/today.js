@@ -1,6 +1,8 @@
 import { app } from '../app.js';
 import { api } from '../api.js';
-import { html, fmt, toast, bar, segmented, formData, remembered, openAttr } from '../ui.js';
+import { html, fmt, toast, bar, ring, formData, remembered, openAttr } from '../ui.js';
+import { icon } from '../icons.js';
+import { crawlCard, mealCollage } from '../photos.js';
 import { FOOD_BY_ID, describeAmount } from '/core/foods.js';
 import { LIFESTYLES, PACES } from '/core/nutrition.js';
 import { intakeFromLog, mealSnapshot } from '/core/planner.js';
@@ -41,34 +43,66 @@ function onboarding() {
   const p = app.profile;
   const s = app.settings;
   return html`
-    <div class="card">
-      <h1>Welcome to Leve 👋</h1>
-      <p>A gentle fat-loss plan built around a sensitive gut: simple meals with exact quantities, a slow fibre build-up,
-      weight-trend tracking, Hevy workouts and Lisbon supermarket shopping lists.</p>
-      <p class="small muted">Check the numbers below (pre-filled from what you told me) and start. You can change everything later in Settings.</p>
+    <div class="hero">
+      <div class="eyebrow" style="color:rgba(255,255,255,.75)">Welcome</div>
+      <h1 style="margin:4px 0 8px">Lose the belly, keep the muscle, calm the gut.</h1>
+      <p class="soft">Simple meals with exact quantities, a slow fibre build-up, your weight trend, Hevy workouts, and a shopping list with real Pingo Doce, Auchan and Mercadona products.</p>
     </div>
     <form class="card" data-submit="start">
-      <h2>Your details</h2>
+      <div class="card-head"><h2>Your details</h2></div>
+      <p class="small muted">Pre-filled from what you told me. You can change everything later in Settings.</p>
       <div class="grid2">
         <div class="field"><label>Sex</label><select name="sex"><option value="male" ${p.sex === 'male' ? 'selected' : ''}>Male</option><option value="female" ${p.sex === 'female' ? 'selected' : ''}>Female</option></select></div>
         <div class="field"><label>Age</label><input name="age" type="number" min="14" max="100" value="${p.age}" required></div>
         <div class="field"><label>Height (cm)</label><input name="heightCm" type="number" step="0.5" value="${p.heightCm}" required></div>
         <div class="field"><label>Weight today (kg)</label><input name="weightKg" type="number" step="0.1" value="${p.weightKg}" required></div>
-        <div class="field"><label>Waist at belly button (cm, optional)</label><input name="waistCm" type="number" step="0.5"></div>
+        <div class="field"><label>Waist at belly button (cm)</label><input name="waistCm" type="number" step="0.5" placeholder="optional"></div>
         <div class="field"><label>Strength sessions / week</label><input name="trainingDaysPerWeek" type="number" min="0" max="7" value="${p.trainingDaysPerWeek}"></div>
       </div>
       <div class="field"><label>Daily activity (outside the gym)</label>
         <select name="lifestyle">${Object.entries(LIFESTYLES).map(([k, v]) => html`<option value="${k}" ${k === p.lifestyle ? 'selected' : ''}>${v.label}</option>`)}</select></div>
       <div class="field"><label>Pace after the first 2 weeks</label>
         <select name="pace">${Object.entries(PACES).map(([k, v]) => html`<option value="${k}" ${k === p.pace ? 'selected' : ''}>${v.label}</option>`)}</select></div>
-      <div class="field"><label>Where do you shop? (first = main store)</label>
+      <div class="field"><label>Where do you shop most?</label>
         <select name="mainStore">
-          <option value="pingodoce" ${s.stores[0] === 'pingodoce' ? 'selected' : ''}>Pingo Doce first</option>
-          <option value="auchan" ${s.stores[0] === 'auchan' ? 'selected' : ''}>Auchan first</option>
-          <option value="mercadona" ${s.stores[0] === 'mercadona' ? 'selected' : ''}>Mercadona first</option>
+          <option value="pingodoce" ${s.stores[0] === 'pingodoce' ? 'selected' : ''}>Pingo Doce</option>
+          <option value="auchan" ${s.stores[0] === 'auchan' ? 'selected' : ''}>Auchan</option>
+          <option value="mercadona" ${s.stores[0] === 'mercadona' ? 'selected' : ''}>Mercadona</option>
         </select></div>
-      <button class="btn primary block" type="submit">Start my plan today</button>
+      <button class="btn primary block" type="submit">${icon('sparkles')} Start my plan today</button>
     </form>`;
+}
+
+function hero(date, t, intake) {
+  const left = Math.round(t.kcal - intake.kcal);
+  const macros = [
+    ['Protein', intake.protein, t.protein, '#ffd1dc'],
+    ['Carbs', intake.carbs ?? 0, t.carbs, '#ffe3a3'],
+    ['Fat', intake.fat ?? 0, t.fat, '#d9ccff'],
+  ];
+  return html`<section class="hero">
+    <div class="row between" style="margin-bottom:14px">
+      <div><div class="eyebrow" style="color:rgba(255,255,255,.75)">${fmt.date(date)}</div>
+        <h2 style="margin-top:2px">${greeting()}${app.profile.name ? `, ${app.profile.name}` : ''}</h2></div>
+      <span class="chip glass">${icon('target')} Week ${app.weekOfPlan(date)}</span>
+    </div>
+    <div class="hero-grid">
+      ${ring(intake.kcal, t.kcal, { size: 128, stroke: 11, label: html`<b>${fmt.kcal(Math.abs(left))}</b><span class="tiny">${left >= 0 ? 'kcal left' : 'kcal over'}</span>` })}
+      <div>
+        ${macros.map(([name, v, target, c]) => html`<div class="macro"><span class="name">${name}</span><span class="val">${Math.round(v)} / ${target} g</span>${bar(v, target, c)}</div>`)}
+      </div>
+    </div>
+    <div class="row wrap" style="margin-top:14px;gap:6px">
+      <span class="chip glass">${icon('flame')} ${fmt.kcal(intake.kcal)} / ${fmt.kcal(t.kcal)} kcal</span>
+      <span class="chip glass">${icon('wheat')} fibre ~${t.fibre} g</span>
+      <span class="chip glass">${icon('droplets')} ${t.waterL} L water</span>
+    </div>
+  </section>`;
+}
+
+function greeting() {
+  const h = new Date().getHours();
+  return h < 12 ? 'Good morning' : h < 19 ? 'Good afternoon' : 'Good evening';
 }
 
 function weighCard(date) {
@@ -77,74 +111,92 @@ function weighCard(date) {
   const todays = app.state.weights.find((w) => w.date === date);
   return html`
     <form class="card" data-submit="weigh">
-      <div class="card-head"><h3>Morning weigh-in</h3>${todays ? html`<span class="badge ok">done</span>` : ''}</div>
       <div class="row">
+        <div class="tile-ic">${icon('scale')}</div>
+        <div class="grow"><h3>Morning weigh-in</h3>
+          <div class="tiny muted">${trend ? html`Trend <b>${fmt.kg(trend.trend)}</b>${rate ? html` · ${fmt.signed(rate.kgPerWeek, 2)} kg/week` : ''}` : 'After the toilet, before food or drink'}</div></div>
+        ${todays ? html`<span class="chip ok">${icon('check')} ${fmt.kg(todays.kg)}</span>` : ''}
+      </div>
+      <div class="row mt">
         <input class="grow" name="kg" type="number" step="0.1" min="30" max="350" placeholder="kg" value="${todays?.kg ?? ''}" aria-label="Weight in kg" required>
-        <input class="grow" name="waistCm" type="number" step="0.5" placeholder="waist cm (weekly)" value="${todays?.waistCm ?? ''}" aria-label="Waist in cm">
+        <input class="grow" name="waistCm" type="number" step="0.5" placeholder="waist cm" value="${todays?.waistCm ?? ''}" aria-label="Waist in cm (weekly)">
         <button class="btn primary" type="submit">Save</button>
       </div>
-      <p class="small muted mt">
-        ${trend ? html`Trend <b>${fmt.kg(trend.trend)}</b>` : 'Weigh after the toilet, before food or drink.'}
-        ${rate ? html` · ${fmt.signed(rate.kgPerWeek, 2)} kg/week (${fmt.signed(rate.pctPerWeek, 2)}%)` : ''}
-      </p>
     </form>`;
+}
+
+export function ingredientLine(items) {
+  return items
+    .filter((i) => i.g > 0 && FOOD_BY_ID[i.food].per100.kcal > 0)
+    .map((i) => `${describeAmount(FOOD_BY_ID[i.food], i.g)} ${FOOD_BY_ID[i.food].name.toLowerCase()}`)
+    .join(' · ');
 }
 
 function mealCard(meal, log, date) {
   const eaten = Boolean(log.meals?.[meal.slot]?.eaten);
-  if (!meal.recipe) return html`<li class="meal"><b>${meal.label}</b>: no recipe fits your settings. <a href="#/recipes">Pick one</a></li>`;
+  if (!meal.recipe) {
+    return html`<div class="meal"><div class="grow"><div class="kind">${meal.label}</div><div class="title">No recipe fits your settings</div>
+      <a href="#/recipes">Pick one</a></div></div>`;
+  }
   const r = meal.recipe;
+  const href = `#/recipe/${r.id}?date=${date}&slot=${meal.slot}`;
   return html`
-    <li class="meal ${eaten ? 'done' : ''}">
-      <div class="row between" style="align-items:flex-start">
-        <div class="grow">
-          <span class="badge">${meal.label}</span> ${meal.overridden ? html`<span class="badge info">swapped</span>` : ''}
-          <div class="title">${r.name}</div>
-          <div class="small muted">${r.en} · ${r.minutes} min · ${r.methods.join(', ')}</div>
-        </div>
-        <div class="right nowrap"><b>${fmt.kcal(meal.macros.kcal)}</b> kcal<br><span class="small muted">${fmt.g(meal.macros.p)} protein</span></div>
+    <div class="meal ${eaten ? 'done' : ''}">
+      <a href="${href}" aria-label="${r.name}">${mealCollage(meal.items)}</a>
+      <div class="grow">
+        <div class="kind">${meal.label}${meal.overridden ? html` · <span class="muted">swapped</span>` : ''}</div>
+        <a class="title" href="${href}">${r.name}</a>
+        <div class="facts"><span><b>${fmt.kcal(meal.macros.kcal)}</b> kcal</span><span><b>${Math.round(meal.macros.p)} g</b> protein</span><span>${icon('clock', 'sm')} ${r.minutes} min</span></div>
+        <div class="ing">${ingredientLine(meal.items)}</div>
       </div>
-      <ul class="ingredients">
-        ${meal.items.filter((i) => i.g > 0 && FOOD_BY_ID[i.food].per100.kcal > 0).map((i) => html`<li>${describeAmount(FOOD_BY_ID[i.food], i.g)} · ${FOOD_BY_ID[i.food].name}</li>`)}
-      </ul>
-      <div class="meal-actions">
-        <button class="btn small ${eaten ? 'primary' : ''}" data-action="toggle-eaten" data-slot="${meal.slot}">${eaten ? '✓ Eaten' : 'Mark eaten'}</button>
-        <a class="btn small" href="#/recipe/${r.id}?date=${date}&slot=${meal.slot}">How to cook</a>
-        <button class="btn small" data-action="swap" data-slot="${meal.slot}">Swap</button>
+      <div class="meal-side">
+        <button class="checkcircle ${eaten ? 'on' : ''}" data-action="toggle-eaten" data-slot="${meal.slot}" aria-label="${eaten ? 'Eaten' : 'Mark eaten'}" aria-pressed="${eaten}">${icon('check')}</button>
+        <button class="mini-btn" data-action="swap" data-slot="${meal.slot}" aria-label="Swap meal">${icon('shuffle')}</button>
       </div>
-    </li>`;
+    </div>`;
+}
+
+const SCALE = [[0, 'None', 'var(--ok)'], [1, 'Mild', '#84cc16'], [2, 'Mod.', 'var(--carbs)'], [3, 'Bad', 'var(--danger)']];
+
+function faces(name, value, action, options = SCALE) {
+  return html`<div class="faces" role="group">${options.map(
+    ([v, label, c]) => html`<button type="button" class="${value === v ? 'on' : ''}" style="${c ? `--c:${c}` : ''}" data-action="${action}" data-name="${name}" data-value="${v}" aria-pressed="${value === v}">${label}</button>`,
+  )}</div>`;
 }
 
 function gutCard(date, log) {
   const s = log.symptoms || {};
-  const scale = [[0, 'none'], [1, 'mild'], [2, 'mod.'], [3, 'bad']];
+  const logged = Boolean(log.symptoms);
   return html`
-    <details class="card" data-remember="gut" ${openAttr('gut', !log.symptoms)}>
-      <summary>Gut & energy check (30 s) ${log.symptoms ? html`<span class="badge ok">logged</span>` : ''}</summary>
-      ${SYMPTOMS.map((sym) => html`<div class="row between mb"><span>${sym.label}</span>${segmented(sym.id, scale, s[sym.id], { action: 'symptom' })}</div>`)}
-      <div class="mb"><div class="small muted mb">Stool type (Bristol scale, 4 is ideal)</div>
-        ${segmented('bristol', [1, 2, 3, 4, 5, 6, 7].map((n) => [n, String(n)]), s.bristol, { action: 'symptom' })}
-        ${s.bristol ? html`<div class="tiny muted">${BRISTOL[s.bristol]}</div>` : ''}
-      </div>
-      <div class="row between mb"><span>Energy</span>${segmented('energy', [1, 2, 3, 4, 5].map((n) => [n, String(n)]), log.energy, { action: 'wellbeing' })}</div>
-      <div class="row between mb"><span>Hunger</span>${segmented('hunger', [1, 2, 3, 4, 5].map((n) => [n, String(n)]), log.hunger, { action: 'wellbeing' })}</div>
-      <form class="row" data-submit="notes"><input class="grow" name="notes" placeholder="Notes (e.g. ate out, stress, poor sleep)" value="${s.notes || ''}"><button class="btn small" type="submit">Save</button></form>
+    <details class="card" data-remember="gut" ${openAttr('gut', !logged)}>
+      <summary><span class="tile-ic sm">${icon('stethoscope')}</span> Gut & energy check <span class="chip ${logged ? 'ok' : ''}" style="margin-left:6px">${logged ? 'logged' : '30 s'}</span></summary>
+      ${SYMPTOMS.map((sym) => html`<div class="scale-row"><span class="small bold">${sym.label}</span>${faces(sym.id, s[sym.id], 'symptom')}</div>`)}
+      <div class="scale-row stack"><span class="small bold">Stool type <span class="tiny muted">(Bristol scale: 3–4 is ideal)</span></span>
+        <div class="faces bristol">${[1, 2, 3, 4, 5, 6, 7].map((n) => html`<button type="button" class="${s.bristol === n ? 'on' : ''}" style="--c:${n === 4 || n === 3 ? 'var(--ok)' : n === 5 ? 'var(--carbs)' : 'var(--danger)'}" data-action="symptom" data-name="bristol" data-value="${n}">${n}</button>`)}</div></div>
+      ${s.bristol ? html`<div class="tiny muted right">${BRISTOL[s.bristol]}</div>` : ''}
+      <div class="scale-row"><span class="small bold">Energy</span>${faces('energy', log.energy, 'wellbeing', [1, 2, 3, 4, 5].map((n) => [n, String(n)]))}</div>
+      <div class="scale-row"><span class="small bold">Hunger</span>${faces('hunger', log.hunger, 'wellbeing', [1, 2, 3, 4, 5].map((n) => [n, String(n)]))}</div>
+      <form class="row mt" data-submit="notes"><input class="grow" name="notes" placeholder="Notes: ate out, stress, poor sleep…" value="${s.notes || ''}"><button class="btn" type="submit">Save</button></form>
     </details>`;
 }
 
 function trainingCard(date) {
   if (!app.state.hevy.connected) {
-    return html`<div class="card"><div class="card-head"><h3>Training</h3></div>
-      <p class="small">Lift 3× a week to keep muscle while you lose fat. <a href="#/gym">Connect Hevy</a> to track it here.</p></div>`;
+    return html`<a class="card row" href="#/gym" style="color:inherit">
+      <div class="tile-ic">${icon('dumbbell')}</div>
+      <div class="grow"><h3>Training</h3><div class="small muted">Lift 3× a week to keep muscle while you lose fat. Connect Hevy to track it.</div></div>
+      ${icon('chevron-right')}</a>`;
   }
   const ws = app.workouts || [];
   const weekStart = startOfWeek(date);
   const done = sessionsBetween(ws, weekStart, addDays(weekStart, 6));
   const target = app.profile.trainingDaysPerWeek || 3;
   const last = ws[0];
-  return html`<div class="card"><div class="card-head"><h3>Training this week</h3><a class="btn small" href="#/gym">Open</a></div>
-    <div class="row"><b>${done} / ${target}</b> sessions <span class="grow">${bar(done, target)}</span></div>
-    <p class="small muted mt">${last ? html`Last: ${last.title} · ${fmt.date(last.start.slice(0, 10))}` : 'No workouts synced yet.'}</p></div>`;
+  return html`<a class="card" href="#/gym" style="display:block;color:inherit">
+    <div class="row"><div class="tile-ic">${icon('dumbbell')}</div>
+      <div class="grow"><h3>Training this week</h3><div class="tiny muted">${last ? `Last: ${last.title} · ${fmt.date(last.start.slice(0, 10))}` : 'No workouts synced yet'}</div></div>
+      <div class="price">${done}/${target}</div></div>
+    <div class="mt">${bar(done, target)}</div></a>`;
 }
 
 export default {
@@ -154,38 +206,32 @@ export default {
     const t = app.targets();
     const plan = app.dayPlan(date);
     const log = app.dayLog(date);
-    const intake = intakeFromLog(log) || { kcal: 0, protein: 0 };
-    const phase = app.phaseInfo();
+    const intake = intakeFromLog(log) || { kcal: 0, protein: 0, carbs: 0, fat: 0 };
     const tips = TIPS[app.phase()] || TIPS[1];
     const tip = tips[dayIndex(date) % tips.length];
     const extras = log.extras || [];
+    const eaten = plan.meals.filter((m) => log.meals?.[m.slot]?.eaten).length;
     return html`
-      <div class="card">
-        <div class="card-head"><h1>${fmt.date(date)}</h1><span class="badge accent">Phase ${app.phase()} · ${phase.name} · week ${app.weekOfPlan(date)}</span></div>
-        <div class="grid2">
-          <div><div class="row between small"><span>Calories</span><span><b>${fmt.kcal(intake.kcal)}</b> / ${fmt.kcal(t.kcal)}</span></div>${bar(intake.kcal, t.kcal)}</div>
-          <div><div class="row between small"><span>Protein</span><span><b>${intake.protein}</b> / ${t.protein} g</span></div>${bar(intake.protein, t.protein)}</div>
-        </div>
-        <p class="small muted mt">Plan: ${fmt.kcal(plan.totals.kcal)} kcal · ${fmt.g(plan.totals.p)} protein · ${fmt.g(plan.totals.fib)} fibre (goal ~${t.fibre} g) · water ~${t.waterL} L</p>
-      </div>
+      ${hero(date, t, intake)}
       ${weighCard(date)}
-      <div class="card">
-        <div class="card-head"><h2>Today's meals</h2><a class="btn small" href="#/plan">Week</a></div>
-        <ul class="list">${plan.meals.map((m) => mealCard(m, log, date))}</ul>
-        <details class="mt" data-remember="extras" ${openAttr('extras', false)}>
-          <summary>Ate something else? (${extras.length})</summary>
-          <ul class="list">${extras.map((x, i) => html`<li class="row between"><span>${x.name}</span><span class="small">${x.kcal} kcal · ${x.protein} g P <button class="link-btn" data-action="remove-extra" data-index="${i}">remove</button></span></li>`)}</ul>
-          <form class="grid3 mt" data-submit="add-extra">
-            <input name="name" placeholder="What (e.g. café com leite)" required style="grid-column: span 3">
-            <input name="kcal" type="number" min="0" max="5000" placeholder="kcal" required>
-            <input name="protein" type="number" min="0" max="300" placeholder="protein g">
-            <button class="btn" type="submit">Add</button>
-          </form>
-        </details>
-      </div>
+      <div data-crawl-status>${crawlCard(app.crawl)}</div>
+      <div class="section-title"><h2>Today's meals</h2><span class="chip">${eaten}/${plan.meals.length} eaten</span><a class="btn small" href="#/plan">Week ${icon('chevron-right', 'sm')}</a></div>
+      ${plan.meals.map((m) => mealCard(m, log, date))}
+      <p class="tiny muted center">Plan total: ${fmt.kcal(plan.totals.kcal)} kcal · ${Math.round(plan.totals.p)} g protein · ${Math.round(plan.totals.fib)} g fibre. Weights are raw/dry.</p>
+      <details class="card" data-remember="extras" ${openAttr('extras', false)}>
+        <summary><span class="tile-ic sm">${icon('plus')}</span> Ate something else? ${extras.length ? html`<span class="chip" style="margin-left:6px">${extras.length}</span>` : ''}</summary>
+        ${extras.length ? html`<ul class="list mb">${extras.map((x, i) => html`<li class="row between"><span class="bold">${x.name}</span><span class="small muted">${x.kcal} kcal · ${x.protein} g P
+          <button class="mini-btn" style="display:inline-grid;vertical-align:middle;margin-left:6px" data-action="remove-extra" data-index="${i}" aria-label="Remove">${icon('x')}</button></span></li>`)}</ul>` : ''}
+        <form class="grid3" data-submit="add-extra">
+          <input name="name" placeholder="What (e.g. café com leite)" required style="grid-column: span 3">
+          <input name="kcal" type="number" min="0" max="5000" placeholder="kcal" required>
+          <input name="protein" type="number" min="0" max="300" placeholder="protein g">
+          <button class="btn primary" type="submit">Add</button>
+        </form>
+      </details>
       ${gutCard(date, log)}
       ${trainingCard(date)}
-      <div class="card flat"><b>Tip:</b> ${tip}</div>`;
+      <div class="callout">${icon('lightbulb')}<div><b>Tip.</b> ${tip}</div></div>`;
   },
 
   actions: {

@@ -220,6 +220,33 @@ function sfccPrice(html) {
   return null;
 }
 
+function absolute(u, base) {
+  if (!u) return null;
+  try {
+    return new URL(decodeEntities(u), base || undefined).toString();
+  } catch {
+    return null;
+  }
+}
+
+// The product's own photo when there is no og:image / JSON-LD: an image in the
+// main gallery, or an image whose URL contains the product id. Never "any image
+// on the page" (that could be a related product or a logo).
+function ownProductImage(html, url) {
+  const i = html.search(/class=["'][^"']*(primary-image|product-image|pdp-image|product-gallery|main-image)/i);
+  if (i >= 0) {
+    const img = pickImage(html.slice(i, i + 4000));
+    if (img) return img;
+  }
+  const id = String(url).match(/[-/](\d{3,12})\.html/)?.[1];
+  if (!id) return null;
+  for (const m of html.matchAll(/<(?:img|source)\b[^>]*>/gi)) {
+    const img = pickImage(m[0]);
+    if (img && img.includes(id)) return img;
+  }
+  return null;
+}
+
 export function parseProductPage(html, url = '') {
   const src = String(html ?? '');
   const ld = ldProduct(jsonLdObjects(src));
@@ -243,7 +270,7 @@ export function parseProductPage(html, url = '') {
     currency: ld?.currency || 'EUR',
     unitPrice,
     available: ld?.available ?? null,
-    image: ld?.image || metaContent(src, 'og:image'),
+    image: absolute(ld?.image || metaContent(src, 'og:image') || ownProductImage(src, url), url),
     pack: parsePackSize(name || ''),
     per100: parseNutrition(text),
     ingredientsText: extractIngredients(text),
@@ -290,6 +317,22 @@ function firstPrice(chunkText) {
   return null;
 }
 
+// Best real image URL in a chunk of HTML (skips lazy-load placeholders).
+export function pickImage(chunk) {
+  const candidates = [];
+  for (const m of String(chunk).matchAll(/<(?:img|source)\b[^>]*>/gi)) {
+    const tag = m[0];
+    for (const attr of ['data-src', 'data-lazy', 'data-original', 'data-srcset', 'srcset', 'src']) {
+      const a = tag.match(new RegExp(`\\s${attr}=["']([^"']+)["']`, 'i'));
+      if (!a) continue;
+      const first = a[1].trim().split(/\s*,\s*/)[0].split(/\s+/)[0];
+      if (!first || first.startsWith('data:') || /\.svg(\?|$)|placeholder|spinner|blank\.|loading/i.test(first)) continue;
+      candidates.push(first);
+    }
+  }
+  return candidates[0] || null;
+}
+
 function tileFromChunk(chunk, { origin, productHref }, expectedId) {
   const attrs = jsonAttributes(chunk);
   const text = htmlToText(chunk);
@@ -306,7 +349,7 @@ function tileFromChunk(chunk, { origin, productHref }, expectedId) {
   const hrefs = [...chunk.matchAll(productHref)];
   const own = hrefs.find((h) => h[2] === expectedId) || hrefs[0];
   const href = own ? own[1] : null;
-  const img = chunk.match(/<img[^>]+(?:data-src|src)=["']([^"']+)["']/i);
+  const img = pickImage(chunk);
   const brand = pickField(attrs, ['brand', 'item_brand', 'productBrand']);
   const nameClean = name ? clean(name) : null;
   return {
@@ -316,7 +359,7 @@ function tileFromChunk(chunk, { origin, productHref }, expectedId) {
     price,
     unitPrice: parseUnitPrice(text),
     url: href ? new URL(decodeEntities(href), origin).toString() : null,
-    image: img ? new URL(decodeEntities(img[1]), origin).toString() : null,
+    image: img ? new URL(decodeEntities(img), origin).toString() : null,
     promo: /promo|desconto|poupe|-\s?\d{1,2}\s?%/i.test(text),
     pack: parsePackSize(nameClean || ''),
   };
@@ -327,17 +370,34 @@ function tileFromChunk(chunk, { origin, productHref }, expectedId) {
  * options: { origin, productHref } where productHref is a global regex whose
  * group 1 is the href and group 2 the product id.
  */
+// Where the tile around a product link starts: the last list item / product box opened
+// between the previous product and this link (so a photo placed before the link stays with it).
+const TILE_OPEN = /<(?:li|article)\b|<div\b[^>]*class=["'][^"']*(?:product|tile|card|item)[^"']*["']/gi;
+function tileStart(src, index, floor) {
+  const from = Math.max(floor, index - 4000);
+  let last = -1;
+  for (const m of src.slice(from, index).matchAll(TILE_OPEN)) last = m.index;
+  return last >= 0 ? from + last : index;
+}
+
 export function parseProductTiles(html, options) {
   const src = String(html ?? '');
   const marks = [];
   for (const m of src.matchAll(/data-pid=["']([^"']+)["']/g)) marks.push({ id: m[1], index: m.index });
-  if (!marks.length) for (const m of src.matchAll(options.productHref)) marks.push({ id: m[2], index: m.index });
+  const byLink = !marks.length;
+  if (byLink) for (const m of src.matchAll(options.productHref)) marks.push({ id: m[2], index: m.index });
   const starts = [];
   const seen = new Set();
   for (const mk of marks) {
     if (seen.has(mk.id)) continue;
     seen.add(mk.id);
     starts.push(mk);
+  }
+  if (byLink) {
+    for (let i = 0; i < starts.length; i++) {
+      const floor = i ? starts[i - 1].index + 1 : 0;
+      starts[i] = { ...starts[i], index: tileStart(src, starts[i].index, floor) };
+    }
   }
   const tiles = [];
   for (let i = 0; i < starts.length; i++) {

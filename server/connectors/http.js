@@ -134,6 +134,24 @@ export class HttpClient {
     return value;
   }
 
+  // Binary download (product photos). Returns { buffer, contentType }.
+  async getBuffer(url, { headers = {}, timeoutMs = 20000, rateKey = null, maxBytes = 5 * 1024 * 1024 } = {}) {
+    if (rateKey) await this.throttle(rateKey);
+    let res;
+    try {
+      res = await this.fetchImpl(url, {
+        headers: { 'user-agent': this.userAgent, accept: 'image/avif,image/webp,image/png,image/jpeg,*/*;q=0.5', ...headers },
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      throw new HttpError(`Could not reach ${new URL(url).host}: ${err.message}`, { url, code: 'NETWORK' });
+    }
+    if (!res.ok) throw new HttpError(`${new URL(url).host} answered ${res.status}`, { status: res.status, url });
+    const buffer = Buffer.from(await res.arrayBuffer());
+    if (buffer.length > maxBytes) throw new HttpError(`File too large (${buffer.length} bytes)`, { url, code: 'TOO_LARGE' });
+    return { buffer, contentType: (res.headers.get('content-type') || '').split(';')[0].trim() };
+  }
+
   // Non-GET request (no cache). Returns { status, body }.
   async send(method, url, { body, headers = {}, timeoutMs = 20000, rateKey = null } = {}) {
     if (rateKey) await this.throttle(rateKey);

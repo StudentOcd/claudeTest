@@ -1,6 +1,9 @@
 import { app } from '../app.js';
 import { api } from '../api.js';
-import { html, fmt, openModal } from '../ui.js';
+import { html, fmt, openModal, pageHead } from '../ui.js';
+import { icon } from '../icons.js';
+import { mealCollage } from '../photos.js';
+import { ingredientLine } from './today.js';
 import { addDays, startOfWeek, weekdayShort } from '/core/dates.js';
 import { candidateRecipes, scaleRecipe } from '/core/planner.js';
 import { slotBudgets } from '/core/nutrition.js';
@@ -33,17 +36,20 @@ export function openSwap(date, slot) {
   const others = candidateRecipes(slot, { ...ctx, phase: 3 }).filter((r) => !list.includes(r));
   const budget = slotBudgets(ctx.targets, ctx.mealsPerDay).find((b) => b.id === slot);
   const row = (r, later) => {
-    const s = scaleRecipe(r, { kcal: budget.kcalTarget, protein: budget.proteinTarget }, { phase: ctx.phase });
-    return html`<li class="row between">
-      <div class="grow"><div><b>${r.name}</b> ${later ? html`<span class="badge warn">phase ${r.phase}</span>` : ''}</div>
-        <div class="small muted">${r.en} · ${fmt.kcal(s.macros.kcal)} kcal · ${fmt.g(s.macros.p)} P · ${r.minutes} min</div></div>
-      <button class="btn small ${meal?.recipe?.id === r.id ? 'primary' : ''}" data-action="pick" data-id="${r.id}">${meal?.recipe?.id === r.id ? 'Current' : 'Choose'}</button></li>`;
+    const s = scaleRecipe(r, { kcal: budget.kcalTarget, protein: budget.proteinTarget }, { phase: Math.max(ctx.phase, r.phase) });
+    const current = meal?.recipe?.id === r.id;
+    return html`<div class="item" style="padding:10px 0;border-bottom:1px solid var(--line)">
+      ${mealCollage(s.items)}
+      <div class="grow"><div class="title">${r.name}</div>
+        <div class="sub">${r.en}</div>
+        <div class="sub">${fmt.kcal(s.macros.kcal)} kcal · ${Math.round(s.macros.p)} g protein · ${r.minutes} min ${later ? html`<span class="chip warn">phase ${r.phase}</span>` : ''}</div></div>
+      <button class="btn small ${current ? 'primary' : 'outline'}" data-action="pick" data-id="${r.id}">${current ? icon('check') : 'Choose'}</button></div>`;
   };
   openModal(
-    `Swap ${meal?.label || slot} · ${fmt.date(date)}`,
-    html`<ul class="list">${list.map((r) => row(r, false))}</ul>
-      ${meal?.overridden ? html`<button class="btn block mt" data-action="reset">Back to the automatic plan</button>` : ''}
-      ${others.length ? html`<details class="mt"><summary>Not yet in your phase (${others.length})</summary><ul class="list">${others.map((r) => row(r, true))}</ul></details>` : ''}`,
+    `Swap ${meal?.label?.toLowerCase() || slot} · ${fmt.date(date)}`,
+    html`${list.map((r) => row(r, false))}
+      ${meal?.overridden ? html`<button class="btn block mt" data-action="reset">${icon('refresh-cw')} Back to the automatic plan</button>` : ''}
+      ${others.length ? html`<details class="mt"><summary>Not yet in your phase (${others.length})</summary>${others.map((r) => row(r, true))}</details>` : ''}`,
     {
       async pick(el, _e, close) {
         app.state.planOverrides = await api.put(`/api/plan/${date}/${slot}`, { recipeId: el.dataset.id });
@@ -59,48 +65,53 @@ export function openSwap(date, slot) {
   );
 }
 
+function planMeal(m, date) {
+  if (!m.recipe) return html`<div class="meal"><div class="grow"><div class="kind">${m.label}</div><div class="title muted">Nothing fits your settings</div></div></div>`;
+  const href = `#/recipe/${m.recipe.id}?date=${date}&slot=${m.slot}`;
+  return html`<div class="meal">
+    <a href="${href}" aria-label="${m.recipe.name}">${mealCollage(m.items)}</a>
+    <div class="grow">
+      <div class="kind">${m.label}${m.overridden ? html` · <span class="muted">swapped</span>` : ''}</div>
+      <a class="title" href="${href}">${m.recipe.name}</a>
+      <div class="facts"><span><b>${fmt.kcal(m.macros.kcal)}</b> kcal</span><span><b>${Math.round(m.macros.p)} g</b> protein</span><span>${icon('clock', 'sm')} ${m.recipe.minutes} min</span></div>
+      <div class="ing">${ingredientLine(m.items)}</div>
+    </div>
+    <div class="meal-side"><button class="mini-btn" data-action="swap" data-date="${date}" data-slot="${m.slot}" aria-label="Swap meal">${icon('shuffle')}</button></div>
+  </div>`;
+}
+
 export default {
   render(route) {
     if (!app.started()) return html`<div class="card"><p>Start your plan on the <a href="#/today">Today</a> tab first.</p></div>`;
     const offset = Number(route.query.week || 0);
     const monday = addDays(startOfWeek(app.today()), offset * 7);
     const days = app.plans(monday, 7);
+    const today = app.today();
+    const selected = days.find((d) => d.date === route.query.day) || days.find((d) => d.date === today) || days[0];
     const t = app.targets();
-    const sessions = batchSessions(days);
+    const sessions = batchSessions(days).filter((s) => s.portions > 1);
     return html`
-      <div class="card">
-        <div class="card-head">
-          <h1>Week of ${fmt.date(monday)}</h1>
-        </div>
-        <div class="tabs">
-          <a class="btn small ${offset === 0 ? 'on' : ''}" href="#/plan?week=0">This week</a>
-          <a class="btn small ${offset === 1 ? 'on' : ''}" href="#/plan?week=1">Next week</a>
-          <a class="btn small" href="#/recipes">All recipes</a>
-          <a class="btn small" href="#/shop?from=${monday}">Shopping list</a>
-        </div>
-        <p class="small muted">Daily target ${fmt.kcal(t.kcal)} kcal · ${t.protein} g protein. Quantities are raw/dry weights, already scaled for you.</p>
+      ${pageHead('Meal plan', `${fmt.dayMonth(monday)} – ${fmt.dayMonth(addDays(monday, 6))}`, html`<div class="seg">
+        <a class="${offset === 0 ? 'on' : ''}" href="#/plan?week=0">This week</a><a class="${offset === 1 ? 'on' : ''}" href="#/plan?week=1">Next</a></div>`)}
+      <div class="days">${days.map((d) => html`<a class="day ${d.date === selected.date ? 'on' : ''}" href="#/plan?week=${offset}&day=${d.date}">
+        <span class="d">${weekdayShort(d.date)}</span><span class="n">${Number(d.date.slice(8))}</span>${d.date === today ? html`<span class="today"></span>` : ''}</a>`)}</div>
+      <div class="row wrap" style="margin:8px 2px 12px;gap:6px">
+        <span class="chip">${icon('flame')} ${fmt.kcal(selected.totals.kcal)} / ${fmt.kcal(t.kcal)} kcal</span>
+        <span class="chip">${icon('beef')} ${Math.round(selected.totals.p)} / ${t.protein} g protein</span>
+        <span class="chip">${icon('wheat')} ${Math.round(selected.totals.fib)} g fibre</span>
       </div>
-      ${days.map(
-        (d) => html`<div class="card">
-          <div class="card-head"><h3>${weekdayShort(d.date)} ${fmt.dateShort(d.date)} ${d.date === app.today() ? html`<span class="badge accent">today</span>` : ''}</h3>
-            <span class="small muted">${fmt.kcal(d.totals.kcal)} kcal · ${fmt.g(d.totals.p)} P</span></div>
-          <ul class="list">
-            ${d.meals.map(
-              (m) => html`<li class="row between">
-                <div class="grow"><span class="badge">${m.label}</span> ${m.recipe ? html`<a href="#/recipe/${m.recipe.id}?date=${d.date}&slot=${m.slot}">${m.recipe.name}</a>` : html`<span class="muted">nothing fits</span>`}
-                  <div class="tiny muted">${fmt.kcal(m.macros.kcal)} kcal · ${fmt.g(m.macros.p)} P</div></div>
-                <button class="btn small" data-action="swap" data-date="${d.date}" data-slot="${m.slot}">Swap</button></li>`,
-            )}
-          </ul></div>`,
-      )}
-      <div class="card">
-        <h2>Batch cooking</h2>
-        <p class="small muted">Cook once, eat on consecutive days. Keep cooked meals in the fridge up to 3 days.</p>
-        <ul class="list">${sessions.filter((s) => s.portions > 1).map(
-          (s) => html`<li><b>${weekdayShort(s.day)} ${fmt.dateShort(s.day)}</b>: cook <a href="#/recipe/${s.recipe.id}?date=${s.day}&slot=${s.slot}">${s.recipe.name}</a> × ${s.portions} (${s.slot}${s.portions > 1 ? ` until ${weekdayShort(s.last)}` : ''})</li>`,
-        )}</ul>
-        ${sessions.some((s) => s.portions > 1) ? '' : html`<p class="small">Turn on batch cooking in Settings to repeat meals over two days.</p>`}
-      </div>`;
+      ${selected.meals.map((m) => planMeal(m, selected.date))}
+      <div class="tiles mt">
+        <a class="tile" href="#/shop?from=${monday}"><span class="ic">${icon('shopping-basket')}</span><b>Shopping list</b><span>Everything for this week, with real products</span></a>
+        <a class="tile" href="#/recipes"><span class="ic">${icon('book-open')}</span><b>All recipes</b><span>Favourites are planned first</span></a>
+      </div>
+      ${sessions.length ? html`<div class="section-title"><h2>Batch cooking</h2><span class="chip">${sessions.length} sessions</span></div>
+        <div class="card">
+          <p class="small muted">Cook once, eat on consecutive days. Cooked meals keep 3 days in the fridge.</p>
+          <ul class="list">${sessions.map((s) => html`<li><a class="item" href="#/recipe/${s.recipe.id}?date=${s.day}&slot=${s.slot}" style="color:inherit">
+            <div class="day on" style="box-shadow:none;width:48px;padding:6px 0"><span class="d">${weekdayShort(s.day)}</span><span class="n">${Number(s.day.slice(8))}</span></div>
+            <div class="grow"><div class="title">${s.recipe.name}</div><div class="sub">${s.portions} portions · ${s.slot} until ${weekdayShort(s.last)}</div></div>${icon('chevron-right')}</a></li>`)}</ul>
+        </div>` : html`<p class="small muted center mt">Turn on batch cooking in Settings to cook once for two days.</p>`}`;
   },
 
   actions: {

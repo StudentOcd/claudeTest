@@ -6,12 +6,14 @@ import { FOOD_BY_ID } from '../src/core/foods.js';
 import { RECIPE_BY_ID } from '../src/core/recipes.js';
 import { LIFESTYLES, PACES } from '../src/core/nutrition.js';
 import { DEFAULT_TRIGGER_SETTINGS, scanProduct } from '../src/core/gut.js';
-import { STORE_PRODUCTS, categoryUrl, productsFor } from '../src/core/products.js';
+import { STORE_PRODUCTS, categoryUrl } from '../src/core/products.js';
 import { migrate } from './db.js';
 import { HevyClient, createProgram, fetchTemplates, previewProgram, syncWorkouts } from './connectors/hevy.js';
 import { offProduct, offSearch } from './connectors/openfoodfacts.js';
 import { latestByStore, recentPrices } from './connectors/openprices.js';
-import { browseCategory, fetchStoreProduct, priceEntryFromProduct, searchStore, STORE_SITES } from './connectors/stores.js';
+import { browseCategory, fetchStoreProduct, searchStore, STORE_SITES } from './connectors/stores.js';
+import { crawlStores, downloadPhoto, loadCatalog, saveCatalog } from './crawler.js';
+import path from 'node:path';
 
 export class ApiError extends Error {
   constructor(status, message) {
@@ -139,6 +141,8 @@ function validateDayPatch(body, existing = {}) {
         recipeId: v.recipeId && RECIPE_BY_ID[v.recipeId] ? v.recipeId : null,
         kcal: number(v.kcal, 'meal kcal', { min: 0, max: 5000 }),
         protein: number(v.protein ?? 0, 'meal protein', { min: 0, max: 400 }),
+        carbs: number(v.carbs ?? 0, 'meal carbs', { min: 0, max: 1000 }),
+        fat: number(v.fat ?? 0, 'meal fat', { min: 0, max: 500 }),
         foods: Array.isArray(v.foods) ? v.foods.filter((f) => FOOD_BY_ID[f]).slice(0, 30) : [],
       };
     }
@@ -184,7 +188,7 @@ function validatePrice(body) {
     sold,
     eur: number(body.eur, 'price', { min: 0.01, max: 500 }),
     date: body.date ? date(body.date) : todayISO(),
-    source: oneOf(body.source || 'manual', 'source', ['manual', 'receipt', 'store', 'openprices', 'web']),
+    source: oneOf(body.source || 'manual', 'source', ['manual', 'receipt', 'store', 'openprices', 'web', 'mercadona-es']),
   };
   if (sold === 'pack') {
     if (body.packUnits) entry.packUnits = number(body.packUnits, 'units per pack', { min: 1, max: 100, int: true });
@@ -226,6 +230,7 @@ export function registerRoutes(router, ctx) {
   const { db, http } = ctx;
   const S = () => db.state;
   const jobs = new Map();
+  let catalogCache = null;
 
   const hevyClient = () => {
     if (!S().hevy.apiKey) throw new ApiError(409, 'Connect Hevy first (Settings → Hevy API key).');
@@ -336,7 +341,7 @@ export function registerRoutes(router, ctx) {
 
   router.put('/api/product-choice/:foodId', ({ params, body }) => {
     if (!FOOD_BY_ID[params.foodId]) throw bad('Unknown food');
-    const store = oneOf(body?.store, 'store', ['pingodoce', 'auchan']);
+    const store = oneOf(body?.store, 'store', ['pingodoce', 'auchan', 'mercadona']);
     const choice = { ...(S().productChoice[params.foodId] || {}) };
     if (!body.url) delete choice[store];
     else {
@@ -347,7 +352,8 @@ export function registerRoutes(router, ctx) {
       } catch {
         throw bad('Invalid link');
       }
-      if (!STORE_SITES[store].hosts.includes(host)) throw bad('That link is not on the store website');
+      const hosts = store === 'mercadona' ? ['tienda.mercadona.es'] : STORE_SITES[store].hosts;
+      if (!hosts.includes(host)) throw bad('That link is not on the store website');
       choice[store] = {
         url,
         name: text(body.name || '', 'name', 150),
@@ -547,47 +553,100 @@ export function registerRoutes(router, ctx) {
     requireLive();
     const store = oneOf(query.store, 'store', ['pingodoce', 'auchan']);
     try {
-      return withScan(await fetchStoreProduct(http, store, text(query.url, 'url', 500)));
+      const page = await fetchStoreProduct(http, store, text(query.url, 'url', 500));
+      // Keep the photo so the product shows up with it everywhere.
+      if (page.image) {
+        try {
+          const fresh = await loadCatalog(ctx.productsDir);
+          const key = `${store}:${page.id || ''}`;
+          const prev = fresh.products[key] || {};
+          const file = await downloadPhoto(http, path.join(ctx.productsDir, 'img'), store, page.id || page.url, page.image, { force: Boolean(prev.sourceImage && prev.sourceImage !== page.image) });
+          fresh.products[key] = { ...prev, key, store, id: page.id, name: page.name, url: page.url, price: page.price, unitPrice: page.unitPrice, pack: page.pack, per100: page.per100, ingredientsText: page.ingredientsText, image: file, sourceImage: page.image, imageFrom: 'page', fetchedAt: page.fetchedAt, detail: true };
+          if (query.foodId && FOOD_BY_ID[query.foodId]) {
+            const list = ((fresh.foods[query.foodId] ||= {})[store] ||= []);
+            if (!list.includes(key)) list.push(key);
+            fresh.products[key].foods = [...new Set([...(fresh.products[key].foods || []), query.foodId])];
+          }
+          await saveCatalog(ctx.productsDir, fresh);
+          catalogCache = null;
+          page.photo = file;
+        } catch {
+          // the photo is optional
+        }
+      }
+      return withScan(page);
     } catch (err) {
       throw new ApiError(err.code === 'BAD_URL' ? 400 : 502, err.message);
     }
   });
 
-  // Product the app uses for a food at a store: your choice, else the catalogue default.
-  const chosenProduct = (foodId, store) => S().productChoice[foodId]?.[store] || productsFor(foodId, store).find((p) => p.url) || null;
-
-  router.post('/api/stores/refresh', ({ body }) => {
-    requireLive();
-    const foodIds = Array.isArray(body?.foodIds) && body.foodIds.length ? body.foodIds.filter((f) => FOOD_BY_ID[f]) : Object.keys(STORE_PRODUCTS);
-    const stores = (S().settings.stores || []).filter((s) => STORE_SITES[s]);
-    const tasks = [];
-    for (const foodId of foodIds) for (const store of stores) {
-      const prod = chosenProduct(foodId, store);
-      if (prod?.url) tasks.push({ foodId, store, prod });
-    }
-    const id = randomUUID();
-    const job = { id, status: 'running', done: 0, total: tasks.length, updated: 0, errors: [], startedAt: new Date().toISOString() };
-    jobs.set(id, job);
-    (async () => {
-      for (const t of tasks) {
-        try {
-          const product = await fetchStoreProduct(http, t.store, t.prod.url);
-          const entry = priceEntryFromProduct(product, t.prod);
-          if (entry) {
-            addPrice(S(), t.foodId, entry);
-            job.updated++;
-          } else job.errors.push({ foodId: t.foodId, store: t.store, error: 'No price found on the page' });
-        } catch (err) {
-          job.errors.push({ foodId: t.foodId, store: t.store, error: err.message, code: err.code || null });
+  // Catalogue of real store products (bundled with the app + your own crawls).
+  const catalog = async () => {
+    if (catalogCache) return catalogCache;
+    const bundled = await loadCatalog(ctx.bundledProductsDir);
+    const fresh = await loadCatalog(ctx.productsDir);
+    const foods = {};
+    for (const src of [fresh, bundled]) {
+      for (const [foodId, byStore] of Object.entries(src.foods || {})) {
+        for (const [store, keys] of Object.entries(byStore)) {
+          const list = ((foods[foodId] ||= {})[store] ||= []);
+          for (const k of keys) if (!list.includes(k)) list.push(k);
         }
-        job.done++;
+      }
+    }
+    catalogCache = {
+      updatedAt: fresh.updatedAt || bundled.updatedAt,
+      products: { ...bundled.products, ...fresh.products },
+      foods,
+    };
+    return catalogCache;
+  };
+
+  router.get('/api/catalog', () => catalog());
+
+  // One crawl at a time: products, photos and prices for the given foods from your stores.
+  let crawlJob = null;
+  const startCrawl = ({ foodIds: wanted, discover = true } = {}) => {
+    if (crawlJob?.status === 'running') return { jobId: crawlJob.id, total: crawlJob.total, alreadyRunning: true };
+    const foodIds = Array.isArray(wanted) && wanted.length ? wanted.filter((f) => FOOD_BY_ID[f]) : Object.keys(STORE_PRODUCTS);
+    const stores = (S().settings.stores || []).filter((s) => STORE_SITES[s] || s === 'mercadona');
+    const id = randomUUID();
+    const job = { id, status: 'running', done: 0, total: 1, updated: 0, photos: 0, products: 0, message: 'Starting…', errors: [], startedAt: new Date().toISOString() };
+    jobs.set(id, job);
+    crawlJob = job;
+    (async () => {
+      try {
+        const current = await loadCatalog(ctx.productsDir);
+        const res = await crawlStores(http, {
+          stores,
+          foodIds,
+          discover,
+          imgDir: path.join(ctx.productsDir, 'img'),
+          catalog: current,
+          choices: S().productChoice,
+          onProgress: ({ step, total, message, photos, products }) => Object.assign(job, { done: step, total, message, photos, products }),
+        });
+        await saveCatalog(ctx.productsDir, res.catalog);
+        catalogCache = null;
+        for (const [foodId, entries] of Object.entries(res.prices)) for (const e of entries) addPrice(S(), foodId, e);
+        Object.assign(job, { updated: res.stats.prices, photos: res.stats.photos, products: res.stats.products, errors: res.errors.slice(0, 50) });
+      } catch (err) {
+        job.errors.push({ where: 'crawler', error: err.message });
       }
       job.status = 'done';
+      job.done = job.total;
       job.finishedAt = new Date().toISOString();
       db.save();
     })();
-    return { jobId: id, total: tasks.length };
+    return { jobId: id, total: foodIds.length };
+  };
+
+  router.post('/api/stores/refresh', ({ body }) => {
+    requireLive();
+    return startCrawl({ foodIds: body?.foodIds, discover: body?.discover !== false });
   });
+
+  router.get('/api/stores/crawl', () => crawlJob);
 
   router.get('/api/jobs/:id', ({ params }) => {
     const job = jobs.get(params.id);
@@ -639,4 +698,10 @@ export function registerRoutes(router, ctx) {
       throw new ApiError(502, `Open Prices: ${err.message}`);
     }
   });
+
+  return {
+    startCrawl,
+    catalog,
+    liveLookups: () => Boolean(S().settings.liveStoreLookups),
+  };
 }

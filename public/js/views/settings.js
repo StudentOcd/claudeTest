@@ -1,6 +1,6 @@
 import { app } from '../app.js';
 import { api } from '../api.js';
-import { html, fmt, toast, formData, STORE_NAMES } from '../ui.js';
+import { html, fmt, toast, formData, pageHead, STORE_NAMES } from '../ui.js';
 import { LIFESTYLES, PACES } from '/core/nutrition.js';
 import { TRIGGERS } from '/core/gut.js';
 
@@ -20,9 +20,9 @@ export default {
     const t = app.targets();
     const opt = (v, cur, label) => html`<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${label}</option>`;
     return html`
+      ${pageHead('Settings')}
       <form class="card" data-submit="profile">
-        <h1>Settings</h1>
-        <h2 class="mt">You</h2>
+        <div class="card-head"><h2>You</h2></div>
         <div class="grid2">
           <div class="field"><label>Name</label><input name="name" value="${p.name}"></div>
           <div class="field"><label>Sex</label><select name="sex">${opt('male', p.sex, 'Male')}${opt('female', p.sex, 'Female')}</select></div>
@@ -47,19 +47,19 @@ export default {
       </form>
 
       <form class="card" data-submit="food">
-        <h2>Food preferences</h2>
+        <div class="card-head"><h2>Food preferences</h2></div>
         ${EXCLUSIONS.map(([k, l]) => html`<label class="check"><input type="checkbox" name="ex_${k}" ${s.exclusions.includes(k) ? 'checked' : ''}> ${l}</label>`)}
         <label class="check"><input type="checkbox" name="lactoseFree" ${s.exclusions.includes('dairy_lf') ? '' : 'checked'}> Lactose-free dairy is OK for me (after testing it)</label>
         <label class="check"><input type="checkbox" name="batchMode" ${s.batchMode ? 'checked' : ''}> Batch cooking: repeat lunch and dinner for 2 days</label>
         <p class="small"><a href="#/recipes">Favourite or hide recipes</a></p>
         <h3 class="mt">Label checker sensitivity</h3>
-        <table class="simple">${TRIGGERS.map((tr) => html`<tr><td>${tr.label}</td><td><select name="tr_${tr.setting}" style="min-height:32px">
+        <table class="simple">${TRIGGERS.map((tr) => html`<tr><td>${tr.label}</td><td><select name="tr_${tr.setting}" style="min-height:36px;padding:6px 10px">
           ${['avoid', 'caution', 'info', 'off'].map((lv) => opt(lv, s.triggers[tr.setting], lv))}</select></td></tr>`)}</table>
         <button class="btn primary mt" type="submit">Save food settings</button>
       </form>
 
       <form class="card" data-submit="stores">
-        <h2>Supermarkets</h2>
+        <div class="card-head"><h2>Supermarkets</h2></div>
         <p class="small muted">Order = preference. Your main store is used unless another is clearly cheaper.</p>
         ${[0, 1, 2].map((i) => html`<div class="field"><label>${i === 0 ? 'Main store' : `Also shop at (${i + 1})`}</label><select name="store${i}">
           ${opt('', s.stores[i] || '', i === 0 ? '—' : 'none')}${['pingodoce', 'auchan', 'mercadona'].map((k) => opt(k, s.stores[i] || '', STORE_NAMES[k]))}</select></div>`)}
@@ -78,16 +78,16 @@ export default {
       </form>
 
       <div class="card">
-        <h2>Hevy</h2>
+        <div class="card-head"><h2>Hevy</h2></div>
         <p class="small">${app.state.hevy.connected ? html`Connected (key ${app.state.hevy.keyHint}). Manage it on the <a href="#/gym">Gym</a> tab.` : html`Not connected. <a href="#/gym">Connect on the Gym tab</a>.`}</p>
       </div>
 
       <div class="card">
-        <h2>Your data</h2>
+        <div class="card-head"><h2>Your data</h2></div>
         <p class="small muted">Everything is stored in <code>data/leve.json</code> on the computer running Leve. Back it up now and then.</p>
         <div class="row wrap">
           <button class="btn" data-action="export">Download backup</button>
-          <label class="btn" style="margin:0">Restore backup<input type="file" accept="application/json" data-action-change="import" style="display:none"></label>
+          <label class="btn" style="margin:0;font-size:inherit;color:var(--text)">Restore backup<input type="file" accept="application/json" data-action-change="import" style="display:none"></label>
         </div>
       </div>
       <div class="card flat small muted">Leve gives general guidance, not medical advice. Check with your doctor before big diet changes, especially with ongoing gut symptoms.</div>`;

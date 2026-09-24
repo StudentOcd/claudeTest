@@ -1,7 +1,7 @@
 // Offline support: the app shell is cached, and the last copy of your data is
 // kept so the shopping list still opens inside the supermarket without signal.
 
-const CACHE = 'leve-v1';
+const CACHE = 'leve-v2';
 const SHELL = ['/', '/index.html', '/css/app.css', '/js/main.js', '/manifest.webmanifest', '/icons/icon.svg'];
 const DATA = ['/api/state', '/api/hevy/workouts'];
 

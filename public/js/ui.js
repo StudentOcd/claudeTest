@@ -49,6 +49,11 @@ export const fmt = {
     const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
     return new Date(y, m - 1, d).toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' });
   },
+  dayMonth: (iso) => {
+    if (!iso) return '';
+    const [y, m, d] = iso.slice(0, 10).split('-').map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  },
   dateShort: (iso) => {
     if (!iso) return '';
     const [, m, d] = iso.slice(0, 10).split('-').map(Number);
@@ -84,6 +89,7 @@ export function toast(message, { error = false, ms = 3500 } = {}) {
 }
 
 let modalCleanup = null;
+const CLOSE_ICON = '<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>';
 
 /**
  * Open a modal. content: html`` string. actions: { name: (el, event, close) => {} }
@@ -93,7 +99,7 @@ export function openModal(title, content, actions = {}) {
   closeModal();
   const root = document.getElementById('modal-root');
   root.innerHTML = `<div class="modal-back" data-modal-back><div class="modal" role="dialog" aria-modal="true" aria-label="${esc(title)}">
-    <div class="modal-head"><h2>${esc(title)}</h2><button class="btn small" data-modal-close>Close</button></div>
+    <div class="modal-head"><h2>${esc(title)}</h2><button class="icon-btn" data-modal-close aria-label="Close">${CLOSE_ICON}</button></div>
     <div data-modal-body>${content}</div></div></div>`;
   const back = root.firstElementChild;
   const close = () => closeModal();
@@ -168,7 +174,31 @@ export function segmented(name, options, value, { action = 'seg' } = {}) {
   )}</div>`;
 }
 
-export function bar(value, target) {
+export function bar(value, target, color = null) {
   const pct = target > 0 ? Math.min(100, (value / target) * 100) : 0;
-  return html`<div class="progress${value > target * 1.05 ? ' over' : ''}"><div style="width:${pct.toFixed(1)}%"></div></div>`;
+  const c = value > target * 1.05 ? 'var(--accent)' : color;
+  return html`<div class="bar"><div style="width:${pct.toFixed(1)}%;${c ? `--c:${c}` : ''}"></div></div>`;
+}
+
+/** Progress ring. value/target, size in px. Content goes in the middle. */
+export function ring(value, target, { size = 132, stroke = 12, color = '#fff', label = '' } = {}) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const pct = target > 0 ? Math.min(1, value / target) : 0;
+  return html`<div class="ring" style="width:${size}px;height:${size}px">
+    <svg width="${size}" height="${size}" viewBox="0 0 ${size} ${size}" aria-hidden="true">
+      <circle class="ring-bg" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke-width="${stroke}"/>
+      <circle class="ring-fg" cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${color}" stroke-width="${stroke}" stroke-linecap="round"
+        stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${(c * (1 - pct)).toFixed(1)}"/>
+    </svg>
+    <div class="ring-label">${label}</div>
+  </div>`;
+}
+
+export function storeChip(store) {
+  return html`<span class="store-chip store-${store}">${STORE_NAMES[store] || store}</span>`;
+}
+
+export function pageHead(title, sub = '', right = '') {
+  return html`<div class="page-head"><div class="grow">${sub ? html`<div class="eyebrow">${sub}</div>` : ''}<h1>${title}</h1></div>${right}</div>`;
 }

@@ -5,7 +5,7 @@ Leve is a small personal web app (it works on your phone too). It turns a fat-lo
 - **Daily targets.** Calories, protein, fat, carbs and fibre from your profile. Weeks 1–2 are an easier "settle" phase, then a moderate deficit. Every week it checks your weight trend and suggests adjustments.
 - **Meal plan with exact quantities.** 24 simple recipes, all dairy-free with no onion, garlic or sweeteners (one optional lactose-free test recipe for later). Portions are rescaled to your targets: raw weights, cooked weights, eggs, slices and teaspoons. Each recipe has step-by-step cooking (air fryer, oven, pan, saucepan), batch-cooking suggestions and a one-tap meal swap.
 - **Gradual gut transition.** Three phases: *Settle → Build → Expand*. A 30-second symptom check (bloating, pain, urgency, reflux, Bristol stool type) keeps you in a phase or moves you on. Leve also flags foods that may be triggers.
-- **Shopping list for Lisbon supermarkets.** Every food is linked to real **Pingo Doce** and **Auchan** products. Prices can be refreshed from the stores' websites, and you can type in prices from **Mercadona** receipts. The list works out packs to buy, the cost per store and what's left over.
+- **Shopping list with real products.** Every food is linked to real **Pingo Doce**, **Auchan** and **Mercadona** products, with their **photos**, prices and price per kg. A built-in crawler downloads them from the stores' online shops. The list works out packs to buy, the cost per store and what's left over. Tap any item for a product sheet: big photo, alternatives from the same shelf, and your own receipt prices.
 - **Label checker.** Flags lactose, sugar alcohols (sorbitol, maltitol…), sweeteners, onion/garlic, inulin and more, in Portuguese labels. It works on store product pages, Open Food Facts barcodes or any pasted ingredient list.
 - **Weight trend.** A smoothed trend line, weekly rate, waist tracking, and a maintenance estimate learned from your own data.
 - **Hevy integration.** Syncs your workouts and shows sessions per week and strength trends (estimated 1RM). It can **create the 3×/week full-body programme in your Hevy app** and syncs body weight both ways.
@@ -24,6 +24,8 @@ npm start
 ```
 
 Open **http://localhost:3000**. The first screen is pre-filled with your details (26 y, 167 cm, 95 kg, sedentary, lifting 3×/week). Press **Start my plan today**.
+
+On the first start Leve fetches the real products and their photos from Pingo Doce, Auchan and Mercadona in the background, about 5–10 minutes. The progress shows on the Today and Shop tabs. Until a photo arrives, a food shows a plain tile.
 
 ## 2. Use it on your phone
 
@@ -49,18 +51,30 @@ Hevy's API requires **Hevy Pro**.
 
 The key is stored only on your Leve server and is never sent back to the browser.
 
-## 4. Supermarket prices: how they work
+## 4. Real products, photos and prices
 
-| Store | Products | Prices |
+| Store | Products and photos | Prices |
 |---|---|---|
-| **Pingo Doce** | Mapped to real product pages (researched Sept 2026) | Pulled live from pingodoce.pt when you press **Refresh prices** |
-| **Auchan** | Mapped to real product pages | Pulled live from auchan.pt (Lisbon reference prices, postcode 2650 Amadora) |
-| **Mercadona** | No online shop in Portugal | [Open Prices](https://prices.openfoodfacts.org) crowd data + your receipt prices |
+| **Pingo Doce** | pingodoce.pt product pages and shelves | Live from the product page |
+| **Auchan** | auchan.pt product pages and shelves | Live (Lisbon reference prices) |
+| **Mercadona** | Its Spanish online shop, tienda.mercadona.es (same Hacendado products) | Spanish prices as a **guide**, plus your receipt prices and [Open Prices](https://prices.openfoodfacts.org) |
 
-- **Shop → Refresh Auchan & Pingo Doce prices** reads each mapped product page from *your* computer. Requests are spaced 2 seconds apart, cached for 12 h, and skipped when the store's `robots.txt` disallows them. Until then, prices are clearly marked **est.** (estimates from September 2026).
-- **Shop → product & price** lets you browse the store's category, pick a different product, or type the price on the shelf or receipt. Your prices always win.
-- **More → Find products** searches Pingo Doce, Auchan or Open Food Facts (which also covers Mercadona's Hacendado products), shows nutrition per 100 g and runs the gut check.
+- **Shop → Update** (or the automatic first run) crawls the stores for every food in your plan. It reads your chosen and researched products first, then the matching shelf. It saves the photo, name, price, price per kg, pack size, nutrition and ingredients to `data/products/`. Photos are served by Leve itself, so they also work offline in the supermarket.
+- A product only counts for a food if its name says so: "Peito/Bife de Peru" is never filed under chicken, and "Atum em azeite" never under tuna in water.
+- The crawler is polite. Pages are 2 seconds apart per store and cached for 12 h, and it skips anything the store's `robots.txt` disallows.
+- **Tap an item** for its product sheet. Switch stores, pick another product from the shelf (with photos), open it on the store website, or type the shelf or receipt price. Your prices always win.
+- **Products** (search icon, top right) shows all your plan's products with photos, searches the stores or Open Food Facts, and checks barcodes and labels for your gut triggers.
 - These are **unofficial** readers of public pages, for personal use. Store websites change, so if something stops working, run the diagnostic below. Please respect the stores' terms of use.
+
+Crawl from the command line (same result as **Update**):
+
+```bash
+npm run crawl                                    # all foods, all three stores → data/products/
+npm run crawl -- --store pingodoce,auchan --food chicken_breast,eggs
+npm run crawl -- --out public/products           # bundle the photos with the app (e.g. before deploying)
+```
+
+The computer running Leve needs internet access to `www.pingodoce.pt`, `www.auchan.pt`, `tienda.mercadona.es` and `prod-mercadona.imgix.net`. Set `LEVE_AUTO_CRAWL=0` to turn off the automatic first run.
 
 Check every connection from your computer:
 
@@ -80,6 +94,7 @@ It prints ✓/✗ per connector and saves the raw store pages in `data/debug/`, 
 | `APP_PASSWORD` | – | Password for the whole app (HTTP basic auth) |
 | `DATA_DIR` | `./data` | Where `leve.json` and the cache live |
 | `ALLOW_NO_PASSWORD` | – | `1` to allow network access without a password (trusted networks only) |
+| `LEVE_AUTO_CRAWL` | `1` | `0` to skip fetching products and photos when none are downloaded yet |
 
 **Backups:** use **Settings → Download backup** (the Hevy key is left out), or copy `data/leve.json`.
 
@@ -93,7 +108,7 @@ docker run -d -p 3000:3000 -e APP_PASSWORD=choose-something -v leve-data:/data -
 ## 7. Development
 
 ```bash
-npm test          # 74 unit + integration tests (node:test, no dependencies)
+npm test          # 80 unit + integration tests (node:test, no dependencies)
 npm run dev       # restart on file changes
 ```
 
@@ -106,11 +121,13 @@ src/core/        shared logic, used by the server, the browser and the tests
   planner.js     portion scaling and daily/weekly plans
   shopping.js    shopping list, packs, costs per store
   products.js    real Pingo Doce / Auchan products for each food
+  match.js       which store product names count as which food
   gut.js         label scanner, symptom scoring, trigger finder
   training.js    Hevy workout stats, programme, routine payloads
 server/          zero-dependency HTTP server, JSON storage, API and connectors
-public/          the web app (vanilla JS modules, installable PWA)
-scripts/         connector diagnostic
+  crawler.js     store crawler: products, photos, prices → data/products/
+public/          the web app (vanilla JS modules, installable PWA; Plus Jakarta Sans + Lucide icons)
+scripts/         connector diagnostic, crawler CLI
 test/            tests
 ```
 

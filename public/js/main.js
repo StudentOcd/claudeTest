@@ -13,6 +13,8 @@ import products from './views/products.js';
 import gut from './views/gut.js';
 import settings from './views/settings.js';
 import guide from './views/guide.js';
+import { icon } from './icons.js';
+import { crawlCard } from './photos.js';
 import { PHASES } from '/core/nutrition.js';
 
 const VIEWS = { today, plan, recipe, recipes: recipesView, shop, progress, gym, more, products, gut, settings, guide };
@@ -45,8 +47,8 @@ async function render({ keepScroll = false } = {}) {
   }
   current = { route, view };
   document.querySelectorAll('[data-nav]').forEach((a) => a.classList.toggle('on', a.dataset.nav === (NAV_OF[route.name] || route.name)));
-  const badge = document.getElementById('phase-badge');
-  badge.textContent = app.started() ? `Phase ${app.phase()} · ${PHASES[app.phase()].name}` : '';
+  document.getElementById('btn-more').classList.toggle('on', (NAV_OF[route.name] || route.name) === 'more');
+  document.getElementById('phase-chip').innerHTML = app.started() ? `<span class="chip brand">Phase ${app.phase()} · ${PHASES[app.phase()].name}</span>` : '';
   window.scrollTo(0, keepScroll ? scroll : 0);
 }
 
@@ -87,11 +89,27 @@ root.addEventListener(
   true,
 );
 
+// A photo that fails to load (offline, moved on the store's CDN) leaves a plain tile.
+document.addEventListener(
+  'error',
+  (e) => {
+    if (e.target?.tagName !== 'IMG') return;
+    e.target.hidden = true;
+    e.target.parentElement?.classList.add('broken');
+  },
+  true,
+);
+
 window.addEventListener('hashchange', () => {
   closeModal();
   render();
 });
 window.addEventListener('leve:render', () => render({ keepScroll: true }));
+window.addEventListener('leve:crawl', () => {
+  document.querySelectorAll('[data-crawl-status]').forEach((el) => {
+    if (app.crawlRunning()) el.innerHTML = String(crawlCard(app.crawl));
+  });
+});
 
 // Re-render when the day changes while the app stays open.
 let lastDay = app.today();
@@ -102,14 +120,25 @@ setInterval(() => {
   }
 }, 60000);
 
+function drawShell() {
+  document.getElementById('brand-mark').innerHTML = String(icon('leaf'));
+  document.getElementById('btn-products').innerHTML = String(icon('search'));
+  document.getElementById('btn-more').innerHTML = String(icon('layout-grid'));
+  document.querySelectorAll('#nav a[data-icon]').forEach((a) => {
+    a.innerHTML = `<span class="pill">${icon(a.dataset.icon)}</span>${a.textContent}`;
+  });
+}
+
 async function start() {
+  drawShell();
   try {
-    await app.load();
+    await Promise.all([app.load(), app.loadCatalog()]);
   } catch (err) {
     root.innerHTML = `<div class="card"><h2>Can't reach the Leve server</h2><p class="small">${err.message}</p><p class="small">Is <code>npm start</code> running on your computer?</p></div>`;
     return;
   }
   await render();
+  app.watchCrawl();
   if ('serviceWorker' in navigator && window.isSecureContext) {
     navigator.serviceWorker.register('/sw.js').catch(() => {});
   }

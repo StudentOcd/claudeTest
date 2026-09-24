@@ -5,27 +5,29 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Leve – fat loss coach</title>
   <meta name="description" content="Gentle fat-loss coach for a sensitive gut: meal plans with quantities, weight trend, Hevy training sync and Lisbon supermarket prices.">
-  <meta name="theme-color" content="#0f766e">
+  <meta name="theme-color" content="#f3f4f1" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0b0f0d" media="(prefers-color-scheme: dark)">
   <link rel="manifest" href="/manifest.webmanifest">
   <link rel="icon" href="/icons/icon.svg" type="image/svg+xml">
   <link rel="apple-touch-icon" href="/icons/icon-192.png">
+  <link rel="preload" href="/fonts/plus-jakarta-sans-latin-wght-normal.woff2" as="font" type="font/woff2" crossorigin>
   <link rel="stylesheet" href="/css/app.css">
 </head>
 <body>
   <header class="topbar">
-    <a href="#/today" class="brand" style="text-decoration:none;color:inherit">Le<span>ve</span></a>
-    <span id="phase-badge" class="badge accent"></span>
+    <a href="#/today" class="brand" aria-label="Leve home"><span class="brand-mark" id="brand-mark"></span>Leve</a>
+    <span id="phase-chip"></span>
     <span class="spacer"></span>
-    <a href="#/settings" class="btn small" aria-label="Settings">Settings</a>
+    <a href="#/products" class="icon-btn" id="btn-products" aria-label="Find products"></a>
+    <a href="#/more" class="icon-btn" id="btn-more" aria-label="More"></a>
   </header>
-  <main id="view"><p class="muted">Loading…</p></main>
-  <nav class="bottom-nav" id="nav">
-    <a href="#/today" data-nav="today"><svg viewBox="0 0 24 24"><path d="M3 11l9-8 9 8"/><path d="M5 10v10h14V10"/></svg>Today</a>
-    <a href="#/plan" data-nav="plan"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 11h18"/></svg>Plan</a>
-    <a href="#/shop" data-nav="shop"><svg viewBox="0 0 24 24"><circle cx="9" cy="20" r="1.5"/><circle cx="18" cy="20" r="1.5"/><path d="M2 3h3l2.5 12h11.5l2-8H6.2"/></svg>Shop</a>
-    <a href="#/progress" data-nav="progress"><svg viewBox="0 0 24 24"><path d="M3 20h18"/><path d="M5 16l4-5 4 3 6-8"/></svg>Progress</a>
-    <a href="#/gym" data-nav="gym"><svg viewBox="0 0 24 24"><path d="M6 7v10M18 7v10M3 10v4M21 10v4M6 12h12"/></svg>Gym</a>
-    <a href="#/more" data-nav="more"><svg viewBox="0 0 24 24"><circle cx="5" cy="12" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="19" cy="12" r="1.5"/></svg>More</a>
+  <main id="view"><div class="center muted mt-lg"><span class="spinner"></span></div></main>
+  <nav class="bottom-nav" id="nav" aria-label="Main">
+    <a href="#/today" data-nav="today" data-icon="house">Today</a>
+    <a href="#/plan" data-nav="plan" data-icon="calendar-days">Plan</a>
+    <a href="#/shop" data-nav="shop" data-icon="shopping-basket">Shop</a>
+    <a href="#/progress" data-nav="progress" data-icon="chart-line">Progress</a>
+    <a href="#/gym" data-nav="gym" data-icon="dumbbell">Gym</a>
   </nav>
   <div class="toast-wrap" id="toasts"></div>
   <div id="modal-root"></div>

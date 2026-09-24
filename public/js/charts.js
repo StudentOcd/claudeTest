@@ -50,9 +50,15 @@ export function weightChart(points, { goal = null, height = 200, unit = 'kg', fi
     .map((p) => `<circle class="raw" cx="${sx(dayIndex(p.date)).toFixed(1)}" cy="${sy(p[field]).toFixed(1)}" r="2.5"><title>${esc(p.date)}: ${p[field]} ${unit}</title></circle>`)
     .join('');
   const tp = points.filter((p) => typeof p[trendField] === 'number');
-  const line = tp.length > 1 ? `<path class="trend" d="${tp.map((p, i) => `${i ? 'L' : 'M'}${sx(dayIndex(p.date)).toFixed(1)},${sy(p[trendField]).toFixed(1)}`).join('')}"/>` : '';
+  const path = tp.map((p, i) => `${i ? 'L' : 'M'}${sx(dayIndex(p.date)).toFixed(1)},${sy(p[trendField]).toFixed(1)}`).join('');
+  const line = tp.length > 1 ? `<path class="trend" d="${path}"/>` : '';
+  const base = (H - bottom).toFixed(1);
+  const area = tp.length > 1
+    ? `<defs><linearGradient id="trendfill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" style="stop-color:var(--brand);stop-opacity:.22"/><stop offset="1" style="stop-color:var(--brand);stop-opacity:0"/></linearGradient></defs>`
+      + `<path class="area" d="${path}L${sx(dayIndex(tp[tp.length - 1].date)).toFixed(1)},${base}L${sx(dayIndex(tp[0].date)).toFixed(1)},${base}Z"/>`
+    : '';
   const goalLine = goal ? `<line class="goal" x1="${left}" x2="${W - right}" y1="${sy(goal).toFixed(1)}" y2="${sy(goal).toFixed(1)}"/>` : '';
-  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Chart">${grid}${goalLine}${dots}${line}${xl}</svg>`;
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Chart">${grid}${area}${goalLine}${dots}${line}${xl}</svg>`;
 }
 
 /** Bars: items [{ label, value }], options: { target, height, format } */
@@ -71,7 +77,7 @@ export function barChart(items, { target = null, height = 130, format = (v) => S
     const w = bw * 0.7;
     const y = sy(it.value);
     const low = target && it.value < target;
-    out += `<rect class="bar${low ? ' low' : ''}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${(H - bottom - y).toFixed(1)}" rx="3"><title>${esc(it.label)}: ${esc(format(it.value))}</title></rect>`;
+    out += `<rect class="col${low ? ' low' : ''}" x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${w.toFixed(1)}" height="${(H - bottom - y).toFixed(1)}" rx="3"><title>${esc(it.label)}: ${esc(format(it.value))}</title></rect>`;
     out += `<text x="${(x + w / 2).toFixed(1)}" y="${H - 6}" text-anchor="middle">${esc(it.label)}</text>`;
     if (it.value > 0) out += `<text x="${(x + w / 2).toFixed(1)}" y="${(y - 3).toFixed(1)}" text-anchor="middle">${esc(format(it.value))}</text>`;
   });

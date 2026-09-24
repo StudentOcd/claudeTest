@@ -206,6 +206,8 @@ export function mealSnapshot(meal) {
     recipeId: meal.recipe?.id || null,
     kcal: Math.round(meal.macros.kcal),
     protein: Math.round(meal.macros.p),
+    carbs: Math.round(meal.macros.c),
+    fat: Math.round(meal.macros.f),
     foods: meal.items.filter((i) => i.g > 0).map((i) => i.food),
   };
 }
@@ -215,20 +217,17 @@ export function intakeFromLog(dayLog) {
   if (!dayLog) return null;
   let kcal = 0;
   let protein = 0;
+  let carbs = 0;
+  let fat = 0;
   let any = false;
-  for (const m of Object.values(dayLog.meals || {})) {
-    if (m?.eaten) {
-      kcal += Number(m.kcal) || 0;
-      protein += Number(m.protein) || 0;
-      any = true;
-    }
-  }
-  for (const x of dayLog.extras || []) {
-    kcal += Number(x.kcal) || 0;
-    protein += Number(x.protein) || 0;
+  for (const m of [...Object.values(dayLog.meals || {}).filter((m) => m?.eaten), ...(dayLog.extras || [])]) {
+    kcal += Number(m.kcal) || 0;
+    protein += Number(m.protein) || 0;
+    carbs += Number(m.carbs) || 0;
+    fat += Number(m.fat) || 0;
     any = true;
   }
-  return any ? { kcal: Math.round(kcal), protein: Math.round(protein) } : null;
+  return any ? { kcal: Math.round(kcal), protein: Math.round(protein), carbs: Math.round(carbs), fat: Math.round(fat) } : null;
 }
 
 // Share of planned meals ticked as eaten, over the logged days among `dates`.

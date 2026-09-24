@@ -88,6 +88,25 @@ function checkAuth(req, password) {
   return given.length === expected.length && timingSafeEqual(given, expected);
 }
 
+const IMG_TYPES = { '.jpg': 'image/jpeg', '.png': 'image/png', '.webp': 'image/webp', '.avif': 'image/avif', '.gif': 'image/gif' };
+
+// Product photos saved by the crawler (your data folder first, then the ones shipped with the app).
+async function serveProductImage(res, name, dirs) {
+  if (!/^[a-z]+-[A-Za-z0-9_-]+\.(jpg|png|webp|avif|gif)$/.test(name)) return false;
+  for (const dir of dirs) {
+    const file = path.join(dir, name);
+    try {
+      const data = await readFile(file);
+      res.writeHead(200, { 'content-type': IMG_TYPES[path.extname(name)], 'cache-control': 'public, max-age=604800' });
+      res.end(data);
+      return true;
+    } catch {
+      // try the next folder
+    }
+  }
+  return false;
+}
+
 async function serveStatic(res, pathname) {
   let file;
   if (pathname.startsWith('/core/')) file = path.join(ROOT, 'src', pathname);
@@ -119,6 +138,9 @@ export async function startServer({
   password = process.env.APP_PASSWORD || '',
   fetchImpl = globalThis.fetch,
   quiet = false,
+  intervals = {},
+  // Fetch products and photos in the background when none are downloaded yet.
+  autoCrawl = process.env.LEVE_AUTO_CRAWL !== '0',
 } = {}) {
   const loopback = ['127.0.0.1', 'localhost', '::1'].includes(host);
   if (!loopback && !password && process.env.ALLOW_NO_PASSWORD !== '1') {
@@ -142,11 +164,18 @@ export async function startServer({
       openprices: 1000,
       'store-auchan': 2000,
       'store-pingodoce': 2000,
+      mercadona: 700,
+      'img-auchan': 300,
+      'img-pingodoce': 300,
+      'img-mercadona': 200,
+      ...intervals,
     },
   });
 
   const router = createRouter();
-  registerRoutes(router, { db, http });
+  const productsDir = path.join(dataDir, 'products');
+  const bundledProductsDir = path.join(ROOT, 'public', 'products');
+  const routes = registerRoutes(router, { db, http, productsDir, bundledProductsDir });
 
   const server = createServer(async (req, res) => {
     try {
@@ -170,6 +199,12 @@ export async function startServer({
         return;
       }
       if (req.method !== 'GET' && req.method !== 'HEAD') throw new ApiError(405, 'Method not allowed');
+      if (url.pathname.startsWith('/product-img/')) {
+        const dirs = [path.join(productsDir, 'img'), path.join(bundledProductsDir, 'img')];
+        if (await serveProductImage(res, url.pathname.slice('/product-img/'.length), dirs)) return;
+        send(res, 404, 'No photo');
+        return;
+      }
       if (await serveStatic(res, url.pathname)) return;
       // SPA fallback
       if (await serveStatic(res, '/')) return;
@@ -195,6 +230,14 @@ export async function startServer({
       }
     }
     console.log(`  Data file: ${db.file}\n`);
+  }
+
+  if (autoCrawl && routes.liveLookups()) {
+    const have = Object.values((await routes.catalog()).products).some((p) => p.image);
+    if (!have) {
+      const { jobId } = routes.startCrawl();
+      if (!quiet) console.log(`  No product photos yet: fetching them from the stores in the background (job ${jobId.slice(0, 8)}).\n`);
+    }
   }
 
   const close = async () => {

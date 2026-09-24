@@ -15,11 +15,55 @@ export const app = {
   state: null,
   workouts: null,
   templates: {},
+  catalog: { products: {}, foods: {} },
   seenPrices: seenPriceEntries(),
 
   async load() {
     this.state = await api.get('/api/state');
     return this.state;
+  },
+
+  // Product crawl running on the server (started by you or on first start-up).
+  crawl: null,
+  watching: null,
+
+  /** Follow the running crawl; resolves with the finished job (or null when none runs). */
+  watchCrawl() {
+    if (this.watching) return this.watching;
+    this.watching = (async () => {
+      for (;;) {
+        try {
+          this.crawl = await api.get('/api/stores/crawl');
+        } catch {
+          break;
+        }
+        window.dispatchEvent(new Event('leve:crawl'));
+        if (this.crawl?.status !== 'running') break;
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      const job = this.crawl?.status === 'done' ? this.crawl : null;
+      if (job) {
+        await Promise.all([this.load(), this.loadCatalog()]);
+        window.dispatchEvent(new Event('leve:render'));
+      }
+      this.watching = null;
+      return job;
+    })();
+    return this.watching;
+  },
+
+  crawlRunning() {
+    return this.crawl?.status === 'running';
+  },
+
+  // Real store products with their photos (bundled + your own crawls).
+  async loadCatalog() {
+    try {
+      this.catalog = await api.get('/api/catalog');
+    } catch {
+      // keep the last copy
+    }
+    return this.catalog;
   },
 
   async loadWorkouts(force = false) {
