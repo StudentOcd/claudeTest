@@ -4,7 +4,7 @@ import { HttpClient } from '../server/connectors/http.js';
 import { HevyClient, createProgram, syncWorkouts } from '../server/connectors/hevy.js';
 import { normalizeOffProduct, offProduct, offSearch } from '../server/connectors/openfoodfacts.js';
 import { latestByStore, recentPrices, storeFromLocation } from '../server/connectors/openprices.js';
-import { searchStore, fetchStoreProduct, assertStoreUrl } from '../server/connectors/stores.js';
+import { searchStore, fetchStoreProduct, assertStoreUrl, photoUrl } from '../server/connectors/stores.js';
 
 // A fake fetch: routes are [predicate(url, init), responder(url, init)].
 function fakeFetch(routes) {
@@ -189,4 +189,16 @@ test('http client caches and throttles', async () => {
   await http.get('https://x.example/c', { rateKey: 'k' });
   assert.equal(fetch.calls.length, 3, 'second /a came from the cache');
   assert.ok(Date.now() - t0 >= 90, 'requests were spaced out');
+});
+
+test('store photos are requested at 400 px from the stores\' image service', () => {
+  assert.equal(
+    photoUrl('auchan', 'https://www.auchan.pt/on/demandware.static/-/Sites-auchan-pt-master-catalog/default/dwb6/images/hi-res/000446856.jpg'),
+    'https://www.auchan.pt/dw/image/v2/BFRC_PRD/on/demandware.static/-/Sites-auchan-pt-master-catalog/default/dwb6/images/hi-res/000446856.jpg?sw=400&sh=400&sm=fit',
+  );
+  assert.equal(
+    photoUrl('pingodoce', 'https://static.pingodoce.pt/dw/image/v2/BLJJ_PRD/on/demandware.static/-/Sites-pingo-doce-master/default/dw8c/images/large/889028_6f.jpg'),
+    'https://static.pingodoce.pt/dw/image/v2/BLJJ_PRD/on/demandware.static/-/Sites-pingo-doce-master/default/dw8c/images/large/889028_6f.jpg?sw=400&sh=400&sm=fit',
+  );
+  assert.equal(photoUrl('mercadona', 'https://prod-mercadona.imgix.net/images/a.jpg?fit=crop&h=400&w=400'), 'https://prod-mercadona.imgix.net/images/a.jpg?fit=crop&h=400&w=400');
 });
