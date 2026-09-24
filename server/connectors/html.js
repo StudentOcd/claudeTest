@@ -87,7 +87,9 @@ export function parsePackSize(name) {
   m = s.match(/(\d+(?:\.\d+)?)\s*(kg|grs|gr|g|ml|cl|lt|l)\b/);
   if (m) return { grams: toGrams(Number(m[1]), m[2]) };
   if (/duas\s+duzias/.test(s)) return { units: 24 };
-  if (/meia\s+duzia/.test(s)) return { units: 6 };
+  if (/meia\s+duzia|1\/2\s*duzia/.test(s)) return { units: 6 };
+  m = s.match(/(\d+)\s*duzias?\b/);
+  if (m) return { units: Number(m[1]) * 12 };
   if (/\bduzia\b/.test(s)) return { units: 12 };
   m = s.match(/(\d+)\s*(un|unid|unidades|ovos)\b/);
   if (m) return { units: Number(m[1]) };
@@ -223,8 +225,23 @@ const filled = (o) => Object.keys(o || {}).length + (o?.kcal !== undefined ? 2 :
 
 // Per-100 g values from a nutrition table rendered as text lines. Every nutrition heading on the
 // page is tried (the first is often just a tab title far from the table); the fullest read wins.
+// "Energia: 591 kJ / 142 kcal; lípidos: 10,0 g, dos quais saturados: 3,0 g; …" (one sentence, as on
+// Auchan pages) becomes one line per nutrient. Decimal commas ("10,0") are never split.
+const NUTRIENT_WORD = /(?:dos quais|of which|energia|valor energ|l[ií]pidos|gordura|mat[eé]ria gorda|saturad|hidratos|carboidratos|a[cç][uú]car|fibra|prote[ií]na|\bsal\b)/i;
+function splitInline(line) {
+  const hits = NUTRIENTS.filter((n) => n.re.test(line)).length;
+  if (hits < 3) return [line];
+  return line.split(/;|,(?=\s*[^\d\s])/).map((x) => x.trim()).filter(Boolean)
+    .reduce((acc, part) => {
+      // keep a fragment without a nutrient word (e.g. "por 100 g") with the previous one
+      if (acc.length && !NUTRIENT_WORD.test(part)) acc[acc.length - 1] += `, ${part}`;
+      else acc.push(part);
+      return acc;
+    }, []);
+}
+
 export function parseNutrition(text) {
-  const lines = String(text ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const lines = String(text ?? '').split('\n').map((l) => l.trim()).filter(Boolean).flatMap(splitInline);
   const starts = [];
   lines.forEach((l, i) => {
     if (NUTRITION_HEADING.test(l)) starts.push(i);

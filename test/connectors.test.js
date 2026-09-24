@@ -143,17 +143,27 @@ test('Open Prices: nearby prices mapped to stores', async () => {
 
 const GRID = `<div class="product" data-pid="2696458"><a class="link" href="/pt/produtos-frescos/talho/frango-e-galinha/peito-de-frango-auchan-kg/2696458.html">Peito De Frango Auchan Kg</a><span class="value" content="6.29">6,29 €</span></div>`;
 
-test('store search respects robots.txt and falls back to the next URL', async () => {
+test('store search reads the sitemap the store publishes, never its search pages', async () => {
+  const index = `<sitemapindex><sitemap><loc>https://www.auchan.pt/sitemap_0-product.xml</loc></sitemap><sitemap><loc>https://www.auchan.pt/sitemap_2-image.xml</loc></sitemap><sitemap><loc>https://www.auchan.pt/sitemap_8-category.xml</loc></sitemap></sitemapindex>`;
+  const products = `<urlset>
+    <url><loc>https://www.auchan.pt/pt/produtos-frescos/talho/frango-e-galinha/peito-de-frango-auchan-kg/2696458.html</loc></url>
+    <url><loc>https://www.auchan.pt/pt/produtos-frescos/talho/frango-e-galinha/coxas-de-frango-kg/100.html</loc></url>
+    <url><loc>https://www.auchan.pt/pt/animais/cao/snack-peito-de-frango/200.html</loc></url></urlset>`;
+  const images = `<urlset><url><loc>https://www.auchan.pt/pt/produtos-frescos/talho/frango-e-galinha/peito-de-frango-auchan-kg/2696458.html</loc>
+    <image:image><image:loc>https://bfrc-prd.my.commercecloud.salesforce.com/on/demandware.static/-/Sites-auchan-pt-master-catalog/default/dw1/images/hi-res/002696458.jpg</image:loc>
+    <image:title>PEITO DE FRANGO AUCHAN KG</image:title></image:image></url></urlset>`;
   const fetch = fakeFetch([
-    [(u) => u.endsWith('/robots.txt'), () => ({ text: 'User-agent: *\nDisallow: /on/demandware.store/\n' })],
-    [(u) => u.includes('/pt/pesquisa?q='), () => ({ text: GRID })],
+    [(u) => u.endsWith('/robots.txt'), () => ({ text: 'User-agent: *\nDisallow: /pesquisa?q=*\n' })],
+    [(u) => u.endsWith('/sitemap_index.xml'), () => ({ text: index })],
+    [(u) => u.endsWith('/sitemap_0-product.xml'), () => ({ text: products })],
+    [(u) => u.endsWith('/sitemap_2-image.xml'), () => ({ text: images })],
   ]);
-  const http = new HttpClient({ fetchImpl: fetch });
-  const res = await searchStore(http, 'auchan', 'peito de frango');
-  assert.equal(res.items.length, 1);
-  assert.equal(res.items[0].store, 'auchan');
-  assert.equal(res.tried[0].code, 'ROBOTS');
-  assert.ok(!fetch.calls.some((c) => c.url.includes('Search-UpdateGrid')), 'disallowed URL was never requested');
+  const res = await searchStore(new HttpClient({ fetchImpl: fetch }), 'auchan', 'peito de frango');
+  assert.equal(res.items.length, 1, 'pet food and other cuts are left out');
+  assert.equal(res.items[0].name, 'PEITO DE FRANGO AUCHAN KG');
+  assert.equal(res.items[0].id, '2696458');
+  assert.equal(res.items[0].image, 'https://www.auchan.pt/dw/image/v2/BFRC_PRD/on/demandware.static/-/Sites-auchan-pt-master-catalog/default/dw1/images/hi-res/002696458.jpg?sw=400&sh=400&sm=fit');
+  assert.ok(!fetch.calls.some((c) => /pesquisa|Search-|category\.xml/.test(c.url)), 'no search page or unneeded sitemap requested');
 });
 
 test('store product fetch is limited to the store domain', async () => {

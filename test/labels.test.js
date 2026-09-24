@@ -45,3 +45,18 @@ test('a bad label is ignored and the reference stays', () => {
   };
   assert.deepEqual(labelNutrition({ catalog, stores: ['auchan'] }), {});
 });
+
+test("another product's label is never borrowed", () => {
+  const catalog = {
+    products: {
+      'pingodoce:1': { key: 'pingodoce:1', store: 'pingodoce', id: '1', url: 'https://www.pingodoce.pt/home/produtos/a-1.html', name: 'Peito de Frango Embalado', detail: true, mapped: true },
+      'pingodoce:2': { key: 'pingodoce:2', store: 'pingodoce', id: '2', url: 'https://www.pingodoce.pt/home/produtos/b-2.html', name: 'Peito de Frango Bio', detail: true, mapped: true, per100: { kcal: 108, p: 24, c: 0, f: 1.3 } },
+    },
+    foods: { chicken_breast: { pingodoce: ['pingodoce:1', 'pingodoce:2'] } },
+  };
+  // the list uses product 1 (no label): the reference stays, product 2's label is not used
+  assert.equal(labelNutrition({ catalog, stores: ['pingodoce'] }).chicken_breast, undefined);
+  // pick product 2 and its label is used
+  const picked = labelNutrition({ catalog, stores: ['pingodoce'], choices: { chicken_breast: { pingodoce: { url: 'https://www.pingodoce.pt/home/produtos/b-2.html' } } } });
+  assert.equal(picked.chicken_breast.per100.kcal, 108);
+});

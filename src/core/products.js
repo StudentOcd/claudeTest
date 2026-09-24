@@ -85,8 +85,6 @@ export const STORE_PRODUCTS = {
     pingodoce: [
       p('38364', 'Medalhões de Pescada Congelados Pingo Doce', '/home/produtos/peixaria/peixe/pescada/medalhoes-de-pescada-congelados-pingo-doce-38364.html',
         { sold: 'pack', packG: 400 }),
-      p('', 'Filetes de Pescada do Cabo MSC Congelados Pingo Doce 400 g', '/produtos/marca-propria-pingo-doce/pingo-doce/filetes-de-pescada-do-cabo-msc-congeladas-pingo-doce-400-g/',
-        { sold: 'pack', packG: 400 }),
     ],
     categories: {
       auchan: `${AUCHAN}/pt/alimentacao/congelados/peixe/filetes-medalhoes-e-especialidades/`,
@@ -197,8 +195,6 @@ export const STORE_PRODUCTS = {
         { sold: 'pack', packG: 1000 }),
     ],
     pingodoce: [
-      p('', 'Arroz Agulha Uruguai Pingo Doce 1 kg', '/produtos/marca-propria-pingo-doce/pingo-doce/arroz-agulha-uruguai-pingo-doce-1kg/',
-        { sold: 'pack', packG: 1000, seen: { eur: 1.45, date: SEEN } }),
       p('651179', 'Arroz Vaporizado Pingo Doce 1 kg', '/home/produtos/mercearia/arroz-e-massa/arroz-/arroz-vaporizado-pingo-doce-651179.html',
         { sold: 'pack', packG: 1000, seen: { eur: 1.35, date: SEEN } }),
     ],
@@ -245,8 +241,6 @@ export const STORE_PRODUCTS = {
         { sold: 'pack', packG: 500 }),
     ],
     pingodoce: [
-      p('', 'Flocos de Aveia Integral Grossos Pingo Doce 500 g', '/produtos/marca-propria-pingo-doce/pingo-doce/flocos-de-aveia-integral-grossos-pingo-doce-500-g/',
-        { sold: 'pack', packG: 500 }),
     ],
   },
   bread: {
@@ -255,8 +249,6 @@ export const STORE_PRODUCTS = {
         { sold: 'pack', packG: 450 }),
     ],
     pingodoce: [
-      p('', 'Pão de Forma Branco sem Côdea Pingo Doce 450 g', '/produtos/marca-propria-pingo-doce/pingo-doce/pao-de-forma-branco-sem-codea-pingo-doce-450-g/',
-        { sold: 'pack', packG: 450 }),
       p('960274', 'Pão de Forma sem Glúten Pingo Doce', '/home/produtos/padaria-e-pastelaria/pao-embalado/pao-de-forma-e-embalado/pao-de-forma-sem-gluten-pingo-doce-960274.html',
         { sold: 'pack', note: 'Gluten-free (no wheat fructans).' }),
     ],
@@ -271,8 +263,6 @@ export const STORE_PRODUCTS = {
         { sold: 'pack', packG: 130 }),
     ],
     pingodoce: [
-      p('', 'Tortitas de Arroz com Sal Pura Vida 130 g', '/produtos/marca-propria-pingo-doce/pura-vida/tortitas-de-arroz-com-sal-pura-vida-130g/',
-        { sold: 'pack', packG: 130 }),
     ],
   },
   olive_oil: {
@@ -281,10 +271,6 @@ export const STORE_PRODUCTS = {
         { sold: 'pack', packG: 2760 }),
     ],
     pingodoce: [
-      p('', 'Azeite Virgem Extra Nossas Planícies Pingo Doce 0,75 L', '/produtos/marca-propria-pingo-doce/pingo-doce/azeite-das-nossas-planicies-virgem-extra-pingo-doce-750ml-250ml-gratis/',
-        { sold: 'pack', packG: 690, seen: { eur: 4.29, date: SEEN } }),
-      p('', 'Azeite Virgem Extra Nossas Planícies Pingo Doce 3 L', '/produtos/marca-propria-pingo-doce/pingo-doce/azeite-das-nossas-planicies-virgem-pingo-doce-3-l/',
-        { sold: 'pack', packG: 2760, seen: { eur: 15.99, date: SEEN } }),
     ],
     categories: {
       auchan: `${AUCHAN}/pt/alimentacao/mercearia/azeite-oleo-e-vinagre/azeite-virgem-e-extra-virgem/`,
@@ -322,8 +308,6 @@ export const STORE_PRODUCTS = {
         { sold: 'pack', packG: 1000, per100: { kcal: 38, p: 2.3, c: 4.3, fib: 4.8 } }),
     ],
     pingodoce: [
-      p('', 'Feijão Verde Cortado Pingo Doce 450 g (congelado)', '/produtos/marca-propria-pingo-doce/pingo-doce/feijao-verde-cortado-pingo-doce-450g/',
-        { sold: 'pack', packG: 450 }),
       p('900660', 'Feijão Verde Embalado Pingo Doce (fresco)', '/home/produtos/frutas-e-vegetais/vegetais/outros-vegetais/feijao-verde-embalado-pingo-doce-900660.html', { sold: 'pack' }),
     ],
   },
@@ -361,8 +345,6 @@ export const STORE_PRODUCTS = {
         { sold: 'pack', packG: 500 }),
     ],
     pingodoce: [
-      p('', 'Polpa de Tomate Pingo Doce 500 g', '/produtos/marca-propria-pingo-doce/pingo-doce/polpa-de-tomate-pingo-doce-500-g/',
-        { sold: 'pack', packG: 500, seen: { eur: 0.99, date: SEEN } }),
     ],
     avoid: [
       { store: 'auchan', id: '3556858', name: 'Polpa De Tomate Auchan Com Cebola E Alho 500g', reason: 'Contains onion and garlic.' },

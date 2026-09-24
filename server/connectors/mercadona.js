@@ -10,7 +10,7 @@ const QS = '?lang=es&wh=vlc1';
 
 // Spanish search words per catalogue food.
 export const MERCADONA_QUERIES = {
-  chicken_breast: { all: ['pechuga', 'pollo'], any: ['filetes', 'entera'], none: ['empanad', 'cocid', 'asad', 'lonchas', 'fiambre'] },
+  chicken_breast: { all: ['pechuga', 'pollo'], any: ['filetes', 'entera'], none: ['empanad', 'cocid', 'asad', 'lonchas', 'fiambre', 'adobad', 'marinad', 'rellen', 'pincho', 'kebab', 'hamburguesa', 'burger', 'churrasco', 'finas hierbas', 'limon'] },
   turkey_steaks: { all: ['pavo'], any: ['filetes', 'pechuga'], none: ['lonchas', 'fiambre', 'cocid', 'hamburguesa', 'salchicha'] },
   pork_loin: { all: ['lomo', 'cerdo'], any: ['filetes', 'cinta'], none: ['embuchado', 'adobado', 'curado'] },
   beef_mince_lean: { all: ['picada'], any: ['vacuno', 'ternera'], none: ['cerdo', 'mixta', 'pollo'] },
@@ -18,10 +18,10 @@ export const MERCADONA_QUERIES = {
   cod_desalted: { all: ['bacalao'], any: ['desalado', 'lomos'], none: ['rebozad', 'empanad', 'ahumado'] },
   salmon: { all: ['salmon'], any: ['lomos', 'rodaja', 'fresco'], none: ['ahumado', 'surimi', 'sushi'] },
   tuna_water: { all: ['atun', 'natural'], any: ['claro'], none: ['aceite', 'escabeche'] },
-  eggs: { all: ['huevos'], any: ['frescos', 'docena'], none: ['codorniz', 'chocolate', 'cocidos'] },
+  eggs: { all: ['huevos'], any: ['frescos', 'docena', 'medianos'], none: ['codorniz', 'chocolate', 'cocidos', 'claras', 'yemas', 'liquido'] },
   egg_whites: { all: ['clara'], any: ['huevo', 'liquida'] },
   turkey_ham: { all: ['pavo'], any: ['lonchas', 'pechuga', 'finas'], none: ['filetes', 'salchicha', 'hamburguesa'] },
-  rice_white: { all: ['arroz'], any: ['largo', 'redondo', 'basmati'], none: ['integral', 'vasitos', 'preparado', 'bebida', 'tortitas', 'hinchado'] },
+  rice_white: { all: ['arroz'], any: ['largo', 'redondo', 'basmati'], none: ['integral', 'vasitos', 'vasito', 'preparado', 'bebida', 'tortitas', 'hinchado', 'cocido', 'microondas', 'sabroz', 'precocinado', 'listo', 'tres delicias', 'con '] },
   potatoes: { all: ['patata'], any: ['malla', 'lavada', 'nueva'], none: ['frita', 'chips', 'congelad', 'tortilla', 'boniato'] },
   sweet_potato: { all: ['boniato'], none: ['frito', 'chips'] },
   pasta: { all: ['espagueti'], any: ['pasta'], none: ['integral', 'arroz'] },

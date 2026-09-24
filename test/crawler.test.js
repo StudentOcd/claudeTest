@@ -4,7 +4,7 @@ import { mkdtempSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HttpClient } from '../server/connectors/http.js';
-import { crawlStores, emptyCatalog, saveCatalog, loadCatalog } from '../server/crawler.js';
+import { catalogPrices, crawlStores, emptyCatalog, saveCatalog, loadCatalog } from '../server/crawler.js';
 import { matchMercadona } from '../server/connectors/mercadona.js';
 
 // 1x1 JPEG and PNG
@@ -114,6 +114,19 @@ test('store products are filed under the right food only', async () => {
   assert.equal(matchesFood('Atum Posta em Azeite', f('tuna_water')), false);
   assert.equal(matchesFood('Arroz Agulha Pingo Doce 1 kg', f('rice_white')), true);
   assert.equal(matchesFood('Nuggets de Frango', f('chicken_breast')), false);
+  // Real catalogue names that used to slip through
+  assert.equal(matchesFood('Ovos de Solo Classe M', f('eggs')), true);
+  assert.equal(matchesFood('Ovos Moles', f('eggs')), false);
+  assert.equal(matchesFood('Fios de Ovos', f('eggs')), false);
+  assert.equal(matchesFood('Kefir Aveia', f('oats')), false);
+  assert.equal(matchesFood('Flocos de Aveia', f('oats')), true);
+  assert.equal(matchesFood('Ice Tea Limão', f('lemon')), false);
+  assert.equal(matchesFood('Pudim de Morango', f('strawberries')), false);
+  assert.equal(matchesFood('Morango Embalado', f('strawberries')), true);
+  assert.equal(matchesFood('LOMBO DE SALMÃO PORÇÕES 150G', f('pork_loin')), false);
+  assert.equal(matchesFood('Tomate Pingo Doce', f('tomato')), true);
+  assert.equal(matchesFood('Pepino Doce', f('cucumber')), false);
+  assert.equal(matchesFood('Fécula de Batata', f('potatoes')), false);
   // Every researched product matches its own food and no other.
   for (const [foodId, byStore] of Object.entries(STORE_PRODUCTS)) {
     for (const p of [...(byStore.auchan || []), ...(byStore.pingodoce || [])]) {
@@ -121,4 +134,43 @@ test('store products are filed under the right food only', async () => {
       for (const other of Object.keys(PT_QUERIES)) if (other !== foodId) assert.ok(!matchesFood(p.name, f(other)), `${p.name} should not match ${other}`);
     }
   }
+});
+
+test('products come from the store sitemap; removed ones are dropped; the best match is used', async () => {
+  const dir = mkdtempSync(path.join(tmpdir(), 'leve-sitemap-'));
+  const PD = 'https://www.pingodoce.pt/home/produtos';
+  const page = (name, price, extra = '') => `<html><head><script type="application/ld+json">{"@type":"Product","name":"${name}","image":"https://static.pingodoce.pt/dw/image/v2/BLJJ_PRD/on/demandware.static/-/x/img/${price}.png","offers":{"price":"${price}"}}</script></head><body><h1>${name}</h1>${extra}</body></html>`;
+  const label = '<div>Composição Nutricional</div><table><tr><td>Energia (kcal)</td><td>352.0</td></tr><tr><td>Lípidos (g)</td><td>0.8</td></tr><tr><td>Hidratos de Carbono (g)</td><td>78.2</td></tr><tr><td>Proteínas (g)</td><td>7.7</td></tr></table>';
+  const calls = [];
+  const fetchImpl = async (url) => {
+    const u = String(url);
+    calls.push(u);
+    const text = (s) => new Response(s, { status: 200, headers: { 'content-type': 'text/html' } });
+    if (u.endsWith('/robots.txt')) return text('User-agent: *\nDisallow: /on/demandware.store/\n');
+    if (u.endsWith('/home/sitemap_index.xml')) return text('<sitemapindex><sitemap><loc>https://www.pingodoce.pt/home/sitemap_0-product.xml</loc></sitemap></sitemapindex>');
+    if (u.endsWith('/sitemap_0-product.xml')) {
+      const item = (slug, id, title) => `<url><loc>${PD}/mercearia/arroz/${slug}-${id}.html</loc><image:image><image:loc>https://static.pingodoce.pt/dw/image/v2/BLJJ_PRD/on/demandware.static/-/x/img/${id}.png</image:loc><image:title>${title}</image:title></image:image></url>`;
+      return text(`<urlset>${item('arroz-agulha', '111', 'Arroz Agulha')}${item('arroz-vaporizado', '222', 'Arroz Vaporizado')}${item('arroz-doce', '333', 'Arroz Doce')}${item('arroz-cozido-copo', '444', 'Arroz Agulha Cozido Copo')}</urlset>`);
+    }
+    if (u.endsWith('arroz-agulha-111.html')) return text(page('Arroz Agulha', '1.57', `<span>1,57 €/kg</span>${label}`));
+    if (u.endsWith('arroz-vaporizado-222.html')) return text(page('Arroz Vaporizado', '1.35', '<span>1,35 €/kg</span>'));
+    if (u.includes('arroz-vaporizado-pingo-doce-651179.html')) return text('<html><body><h1>Página não encontrada</h1></body></html>');
+    if (u.includes('/img/')) return new Response(PNG, { status: 200, headers: { 'content-type': 'image/png' } });
+    return new Response('nope', { status: 404 });
+  };
+  const http = new HttpClient({ fetchImpl });
+  const catalog = emptyCatalog();
+  const { prices, stats } = await crawlStores(http, { stores: ['pingodoce'], foodIds: ['rice_white'], imgDir: path.join(dir, 'img'), catalog });
+  const list = catalog.foods.rice_white.pingodoce.map((k) => catalog.products[k]);
+  assert.equal(list[0].name, 'Arroz Agulha', 'the best real match leads');
+  assert.deepEqual(list[0].per100, { kcal: 352, f: 0.8, c: 78.2, p: 7.7 });
+  assert.equal(list[0].labelFrom, 'store');
+  assert.ok(!list.some((p) => /Doce|Cozido/.test(p.name)), 'rice pudding and cooked rice cups are not rice');
+  assert.equal(stats.removed, 1, 'the researched link that left the shop is dropped');
+  assert.deepEqual(prices.rice_white.map((p) => [p.eur, p.productName]), [[1.57, 'Arroz Agulha']]);
+  // A saved catalogue gives the same shopping-list price (bundled catalogues work without an Update)
+  assert.deepEqual(catalogPrices(catalog).rice_white.map((p) => [p.store, p.sold, p.eur, p.productName]), [['pingodoce', 'weight', 1.57, 'Arroz Agulha']]);
+  assert.ok(list[0].image?.startsWith('pingodoce-111.'), 'photo saved');
+  assert.ok(calls.some((u) => u.includes('sw=400')), 'small photos are requested');
+  assert.ok(!calls.some((u) => /demandware\.store|Search-/.test(u)), 'no search endpoints');
 });

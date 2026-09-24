@@ -12,7 +12,7 @@ import { HevyClient, createProgram, fetchTemplates, previewProgram, syncWorkouts
 import { offProduct, offSearch } from './connectors/openfoodfacts.js';
 import { latestByStore, recentPrices } from './connectors/openprices.js';
 import { browseCategory, fetchStoreProduct, searchStore, STORE_SITES } from './connectors/stores.js';
-import { crawlStores, downloadPhoto, labelFor, loadCatalog, saveCatalog } from './crawler.js';
+import { catalogPrices, crawlStores, downloadPhoto, labelFor, loadCatalog, saveCatalog } from './crawler.js';
 import path from 'node:path';
 
 export class ApiError extends Error {
@@ -613,6 +613,7 @@ export function registerRoutes(router, ctx) {
       products: { ...bundled.products, ...fresh.products },
       foods,
     };
+    catalogCache.prices = catalogPrices(catalogCache);
     return catalogCache;
   };
 

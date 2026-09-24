@@ -233,10 +233,14 @@ export async function startServer({
   }
 
   if (autoCrawl && routes.liveLookups()) {
-    const have = Object.values((await routes.catalog()).products).some((p) => p.image);
-    if (!have) {
+    const catalog = await routes.catalog();
+    const have = Object.values(catalog.products).some((p) => p.image);
+    const ageDays = catalog.updatedAt ? (Date.now() - Date.parse(catalog.updatedAt)) / 86400000 : Infinity;
+    if (!have || ageDays > 7) {
       const { jobId } = routes.startCrawl();
-      if (!quiet) console.log(`  No product photos yet: fetching them from the stores in the background (job ${jobId.slice(0, 8)}).\n`);
+      if (!quiet) {
+        console.log(`  ${have ? `Store data is ${Math.round(ageDays)} days old: refreshing prices` : 'No product photos yet: fetching products'} from the stores in the background (job ${jobId.slice(0, 8)}).\n`);
+      }
     }
   }
 

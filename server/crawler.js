@@ -10,9 +10,9 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { FOOD_BY_ID } from '../src/core/foods.js';
-import { matchesFood } from '../src/core/match.js';
+import { keywordScore, matchesFood, PT_QUERIES } from '../src/core/match.js';
 import { STORE_PRODUCTS, categoryUrl, productsFor } from '../src/core/products.js';
-import { browseCategory, fetchStoreProduct, priceEntryFromProduct, searchStore } from './connectors/stores.js';
+import { browseCategory, fetchStoreProduct, photoUrl, priceEntryFromProduct, sitemapProducts } from './connectors/stores.js';
 import { matchMercadona, mercadonaProduct, mercadonaProducts } from './connectors/mercadona.js';
 import { offProduct } from './connectors/openfoodfacts.js';
 import { isCompleteLabel } from '../src/core/labels.js';
@@ -23,7 +23,8 @@ import { isCompleteLabel } from '../src/core/labels.js';
  */
 export async function labelFor(http, { per100 = null, ean = null } = {}, { useOff = true } = {}) {
   if (isCompleteLabel(per100)) return { per100, labelFrom: 'store' };
-  if (useOff && /^\d{8,14}$/.test(String(ean || ''))) {
+  // Barcodes starting with 2 are the store's own codes for weighed items: never in Open Food Facts.
+  if (useOff && /^\d{8,14}$/.test(String(ean || '')) && !/^2/.test(String(ean).padStart(13, '0'))) {
     const off = await offProduct(http, ean);
     if (off && isCompleteLabel(off.per100)) {
       return { per100: off.per100, labelFrom: 'openfoodfacts', offUrl: off.url, offIngredients: off.ingredientsText || null };
@@ -82,6 +83,41 @@ export async function downloadPhoto(http, imgDir, store, id, imageUrl, { force =
   return `${base}.${ext}`;
 }
 
+// Remove a product the store no longer sells from every food list.
+function forget(catalog, store, url) {
+  for (const [key, p] of Object.entries(catalog.products)) {
+    if (p.store !== store || p.url !== url) continue;
+    delete catalog.products[key];
+    for (const lists of Object.values(catalog.foods)) {
+      if (lists[store]) lists[store] = lists[store].filter((k) => k !== key);
+    }
+  }
+}
+
+// How a product is sold, for its price entry: what we researched, else what its page says.
+function soldFor(candidate, page) {
+  if (candidate.sold) return candidate;
+  if (page.pack?.grams || page.pack?.units) return { sold: 'pack', packG: page.pack.drainedG || page.pack.grams, packUnits: page.pack.units };
+  if (page.unitPrice?.per === 'kg') return { sold: 'weight' };
+  return {};
+}
+
+// The store's own brands first (usually the cheapest), then the closest name, photos preferred.
+const OWN_BRAND = {
+  pingodoce: /\b(pingo doce|nosso talho|nossa peixaria|nossos frescos|nossa fruta|go active|pura vida)\b/i,
+  auchan: /\b(auchan|cultivamos o bom|cuida-te|polegar)\b/i,
+};
+export function rankForFood(products, food, store) {
+  const q = PT_QUERIES[food.id];
+  if (!q) return [];
+  return products
+    .map((p) => ({ p, s: keywordScore(p.name, q) }))
+    .filter((x) => x.s > 0)
+    .map((x) => ({ ...x, s: x.s + (OWN_BRAND[store]?.test(x.p.name) ? 1.5 : 0) + (x.p.image ? 0.5 : 0) }))
+    .sort((a, b) => b.s - a.s || a.p.name.length - b.p.name.length)
+    .map((x) => x.p);
+}
+
 function keyOf(p) {
   return `${p.store}:${p.id || createHash('sha1').update(p.url || p.name).digest('hex').slice(0, 10)}`;
 }
@@ -106,6 +142,31 @@ function record(catalog, foodId, p, { mapped = false } = {}) {
 }
 
 /**
+ * Shopping-list prices from a saved catalogue: for each food and store, the product the list
+ * uses (first on the list with a price). Mercadona prices are Spanish, kept as a guide.
+ */
+export function catalogPrices(catalog) {
+  const out = {};
+  for (const [foodId, byStore] of Object.entries(catalog?.foods || {})) {
+    for (const [store, keys] of Object.entries(byStore || {})) {
+      const p = keys.map((k) => catalog.products[k]).find((x) => x?.detail && x.price > 0);
+      if (!p) continue;
+      const date = (p.fetchedAt || '').slice(0, 10) || undefined;
+      let entry;
+      if (store === 'mercadona') {
+        const byKg = p.unitPrice?.per === 'kg' && !p.pack?.grams;
+        entry = { store, sold: byKg ? 'weight' : 'pack', eur: byKg ? p.unitPrice.eur : p.price, packG: p.pack?.grams || undefined, source: 'mercadona-es', productName: p.name, url: p.url };
+      } else {
+        const researched = productsFor(foodId, store).find((r) => r.url === p.url) || {};
+        entry = priceEntryFromProduct({ ...p, store }, soldFor(researched, p));
+      }
+      if (entry && entry.eur > 0) (out[foodId] ||= []).push({ ...entry, date });
+    }
+  }
+  return out;
+}
+
+/**
  * Crawl the given foods.
  * options: { stores, foodIds, discover, imgDir, catalog, choices, onProgress, maxPerFood }
  *   choices: the user's product choices ({ [foodId]: { [store]: { url } } }) are crawled first
@@ -113,18 +174,19 @@ function record(catalog, foodId, p, { mapped = false } = {}) {
  */
 export async function crawlStores(http, {
   stores = ['pingodoce', 'auchan', 'mercadona'],
-  foodIds = Object.keys(STORE_PRODUCTS),
+  foodIds = [...new Set([...Object.keys(STORE_PRODUCTS), ...Object.keys(PT_QUERIES)])],
   discover = true,
   imgDir,
   catalog = emptyCatalog(),
   choices = {},
   onProgress = () => {},
-  maxPerFood = 10,
+  maxPerFood = 8,
+  detailPerFood = 3,
   forceImages = false,
   offLabels = true,
 } = {}) {
   const prices = {};
-  const stats = { products: 0, photos: 0, prices: 0, errors: 0 };
+  const stats = { products: 0, photos: 0, prices: 0, errors: 0, removed: 0 };
   const errors = [];
   const fail = (where, err) => {
     stats.errors++;
@@ -158,76 +220,128 @@ export async function crawlStores(http, {
   const total = foodIds.length * webStores.length + (stores.includes('mercadona') ? 1 : 0);
   let step = 0;
 
+  // Everything each store sells online, from the sitemaps it publishes for crawlers (read once).
+  const listings = {};
+  const listed = async (store) => {
+    if (!(store in listings)) {
+      try {
+        listings[store] = await sitemapProducts(http, store);
+      } catch (err) {
+        fail(`${store} sitemap`, err);
+        listings[store] = null;
+      }
+    }
+    return listings[store];
+  };
+
   for (const foodId of foodIds) {
     const food = FOOD_BY_ID[foodId];
     if (!food) continue;
     for (const store of webStores) {
       onProgress({ step: ++step, total, message: `${food.name} @ ${store}`, ...stats });
-      // 1. Products we know (your choice first, then the researched ones): full page.
+      const seen = new Set();
+      const alive = []; // { page, candidate, key }
+
+      // A product's own page: price, price per kg, label, barcode, photo.
+      const detail = async (candidate) => {
+        if (seen.has(candidate.url)) return;
+        seen.add(candidate.url);
+        const page = await fetchStoreProduct(http, store, candidate.url);
+        let label = { per100: page.per100, labelFrom: page.per100 ? 'store' : null };
+        try {
+          label = await labelFor(http, page, { useOff: offLabels });
+        } catch (err) {
+          fail(`openfoodfacts ${page.ean}`, err);
+        }
+        const rec = record(
+          catalog,
+          foodId,
+          {
+            store,
+            id: page.id || candidate.id,
+            name: page.name || candidate.name,
+            brand: page.brand,
+            url: page.url,
+            price: page.price,
+            unitPrice: page.unitPrice,
+            pack: page.pack,
+            per100: label.per100,
+            labelFrom: label.labelFrom,
+            offUrl: label.offUrl,
+            ingredientsText: page.ingredientsText || label.offIngredients,
+            ean: page.ean,
+            available: page.available,
+            fetchedAt: page.fetchedAt,
+            detail: true,
+          },
+          { mapped: true },
+        );
+        stats.products++;
+        alive.push({ page, candidate, key: rec.key });
+        await photo(rec, photoUrl(store, page.image), { page: true });
+      };
+      const tryDetail = async (candidate) => {
+        try {
+          await detail(candidate);
+        } catch (err) {
+          if (err.code === 'NOT_FOUND') {
+            stats.removed++;
+            forget(catalog, store, candidate.url);
+          } else fail(`${store} ${candidate.url}`, err);
+        }
+      };
+
+      // 1. Your pick, then the researched products (some may have left the shop since).
       const known = [];
       const choice = choices?.[foodId]?.[store];
       if (choice?.url) known.push({ ...choice, store });
       for (const p of productsFor(foodId, store)) if (p.url && !known.some((k) => k.url === p.url)) known.push(p);
-      for (const mapped of known.slice(0, 3)) {
-        try {
-          const page = await fetchStoreProduct(http, store, mapped.url);
-          let label = { per100: page.per100, labelFrom: page.per100 ? 'store' : null };
-          try {
-            label = await labelFor(http, page, { useOff: offLabels });
-          } catch (err) {
-            fail(`openfoodfacts ${page.ean}`, err);
-          }
-          const rec = record(
-            catalog,
-            foodId,
-            {
-              store,
-              id: page.id || mapped.id,
-              name: page.name || mapped.name,
-              brand: page.brand,
-              url: page.url,
-              price: page.price,
-              unitPrice: page.unitPrice,
-              pack: page.pack,
-              per100: label.per100,
-              labelFrom: label.labelFrom,
-              offUrl: label.offUrl,
-              ingredientsText: page.ingredientsText || label.offIngredients,
-              ean: page.ean,
-              available: page.available,
-              fetchedAt: page.fetchedAt,
-              detail: true,
-            },
-            { mapped: true },
-          );
-          stats.products++;
-          addPrice(foodId, priceEntryFromProduct(page, mapped));
-          await photo(rec, page.image, { page: true });
-        } catch (err) {
-          fail(`${store} ${mapped.url}`, err);
-        }
+      for (const k of known.slice(0, 3)) await tryDetail(k);
+      const settle = () => {
+        // The product the list uses: your pick, else the best match on sale (store brands first).
+        const q = PT_QUERIES[food.id];
+        const score = ({ page, candidate }) => (candidate === known[0] && choice?.url ? 1000 : 0)
+          + (q ? keywordScore(page.name || '', q) : 0)
+          + (OWN_BRAND[store]?.test(page.name || '') ? 1.5 : 0)
+          + (page.price > 0 ? 0.5 : -5);
+        const best = [...alive].sort((a, b) => score(b) - score(a))[0];
+        if (!best) return;
+        addPrice(foodId, priceEntryFromProduct(best.page, soldFor(best.candidate, best.page)));
+        const list = catalog.foods[foodId]?.[store];
+        if (list) catalog.foods[foodId][store] = [best.key, ...list.filter((k) => k !== best.key)];
+      };
+      if (!discover) {
+        settle();
+        continue;
       }
-      // 2. Discover more products (category page or search) with their tile photos.
-      if (!discover) continue;
+
+      // 2. What else the store sells that is this food: best matches get their page read,
+      //    the rest are kept as alternatives with their photo.
+      const all = await listed(store);
+      if (all) {
+        const ranked = rankForFood(all, food, store).slice(0, maxPerFood);
+        for (const p of ranked.slice(0, detailPerFood)) await tryDetail(p);
+        settle();
+        for (const p of ranked) {
+          if (seen.has(p.url)) continue;
+          const rec = record(catalog, foodId, { store, id: p.id, name: p.name, url: p.url, fetchedAt: new Date().toISOString() });
+          stats.products++;
+          await photo(rec, p.image);
+        }
+        continue;
+      }
+      // Sitemap unavailable: the food's category page, when we know one.
+      settle();
       try {
         const url = categoryUrl(foodId, store);
-        const tiles = url ? await browseCategory(http, store, url) : (await searchStore(http, store, food.buy.search || food.name)).items;
-        const matching = tiles.filter((t) => t.name && matchesFood(t.name, food)).slice(0, maxPerFood);
-        for (const t of matching) {
+        const tiles = url ? await browseCategory(http, store, url) : [];
+        for (const t of tiles.filter((x) => x.name && matchesFood(x.name, food)).slice(0, maxPerFood)) {
           const rec = record(catalog, foodId, {
-            store,
-            id: t.id,
-            name: t.name,
-            brand: t.brand,
-            url: t.url,
-            price: t.price,
-            unitPrice: t.unitPrice,
-            pack: t.pack,
-            promo: t.promo,
+            store, id: t.id, name: t.name, brand: t.brand, url: t.url, price: t.price, unitPrice: t.unitPrice, pack: t.pack, promo: t.promo,
             fetchedAt: new Date().toISOString(),
           });
           stats.products++;
-          await photo(rec, t.image);
+          await photo(rec, photoUrl(store, t.image));
         }
       } catch (err) {
         fail(`${store} discover ${foodId}`, err);

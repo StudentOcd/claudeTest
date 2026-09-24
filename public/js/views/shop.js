@@ -207,7 +207,9 @@ function nutritionSection(f, product) {
   const rows = compareToReference(label, f);
   const usedRow = (key) => Math.round((used[key] ?? 0) * 10) / 10;
   const srcText = src?.kind === 'label'
-    ? html`Your plan uses the label of <b>${src.name}</b> (${STORE_NAMES[src.store] || src.store}).`
+    ? html`Your plan uses the label of <b>${src.name}</b> (${STORE_NAMES[src.store] || src.store}), ${src.from === 'openfoodfacts' && src.offUrl
+      ? html`from <a href="${src.offUrl}" target="_blank" rel="noopener">Open Food Facts</a> (typed from photos of the pack)`
+      : 'read from the store page'}.`
     : html`Your plan uses <b>${src?.db}</b> #${src?.code}: ${src?.name}.`;
   return html`<details class="card flat mt" data-remember="nutrition">
     <summary>${icon('list-checks')} Nutrition per 100 g ${f.unit ? '' : html`<span class="chip" style="margin-left:6px">${weighedAs(f) || 'as sold'}</span>`}</summary>
@@ -220,7 +222,7 @@ function nutritionSection(f, product) {
     </table>
     <p class="tiny muted mt">${srcText}
       ${label && !check.ok ? html` This label isn't used: ${check.why}.` : ''}
-      ${!label ? ' No label read for this product yet: Update on the Shop tab reads it from the store page.' : ''}
+      ${!label ? (product?.detail ? " This product's page has no nutrition table (fresh meat, fish and loose produce don't need one), so the reference applies." : ' No label read for this product yet: Update on the Shop tab reads it from the store page.') : ''}
       CIQUAL 2025 is the EU food composition table from ANSES; energy and carbohydrates are calculated as on EU labels.</p>
   </details>`;
 }

@@ -167,6 +167,8 @@ export const app = {
   prices() {
     const out = {};
     for (const [food, list] of Object.entries(this.seenPrices)) out[food] = [...list];
+    // Prices read from the store pages (bundled with the app or from your last Update).
+    for (const [food, list] of Object.entries(this.catalog?.prices || {})) out[food] = [...(out[food] || []), ...list];
     for (const [food, list] of Object.entries(this.state.prices || {})) out[food] = [...(out[food] || []), ...list];
     return out;
   },

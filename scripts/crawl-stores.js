@@ -13,6 +13,7 @@ import { fileURLToPath } from 'node:url';
 import { HttpClient } from '../server/connectors/http.js';
 import { crawlStores, loadCatalog, saveCatalog } from '../server/crawler.js';
 import { STORE_PRODUCTS } from '../src/core/products.js';
+import { PT_QUERIES } from '../src/core/match.js';
 import { FOOD_BY_ID } from '../src/core/foods.js';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -25,7 +26,7 @@ const flag = (name) => args.includes(`--${name}`);
 
 const out = path.resolve(ROOT, opt('out', 'data/products'));
 const stores = opt('store', 'pingodoce,auchan,mercadona').split(',');
-const foods = opt('food', '') ? opt('food').split(',') : Object.keys(STORE_PRODUCTS);
+const foods = opt('food', '') ? opt('food').split(',') : [...new Set([...Object.keys(STORE_PRODUCTS), ...Object.keys(PT_QUERIES)])];
 const unknown = foods.filter((f) => !FOOD_BY_ID[f]);
 if (unknown.length) {
   console.error(`Unknown food(s): ${unknown.join(', ')}`);
@@ -39,6 +40,7 @@ const http = new HttpClient({
     'store-auchan': Number(opt('delay', 1500)),
     'store-pingodoce': Number(opt('delay', 1500)),
     mercadona: 700,
+    'off-product': 4200,
     'img-auchan': 300,
     'img-pingodoce': 300,
     'img-mercadona': 200,
@@ -55,21 +57,28 @@ const { stats, errors } = await crawlStores(http, {
   imgDir: path.join(out, 'img'),
   catalog,
   forceImages: flag('force-images'),
+  maxPerFood: Number(opt('max', 8)),
+  detailPerFood: Number(opt('detail', 3)),
   onProgress: ({ step, total, message }) => process.stdout.write(`\r[${step}/${total}] ${message}`.padEnd(100).slice(0, 100)),
 });
 await saveCatalog(out, catalog);
 
-console.log('\n\nPer food (products found / with photo):');
+console.log('\n\nPer food: products (with photo) · the product the list uses · price · label per 100 g');
+const euro = (x) => (typeof x === 'number' ? `€${x.toFixed(2)}` : '–');
 for (const f of foods) {
   const lists = catalog.foods[f] || {};
-  const cells = stores.map((s) => {
+  console.log(`\n  ${FOOD_BY_ID[f].name}`);
+  for (const s of stores) {
     const keys = lists[s] || [];
     const withPhoto = keys.filter((k) => catalog.products[k]?.image).length;
-    return `${s} ${keys.length}/${withPhoto}`;
-  });
-  console.log(`  ${FOOD_BY_ID[f].name.slice(0, 40).padEnd(40)} ${cells.join('   ')}`);
+    const top = keys.map((k) => catalog.products[k]).find((p) => p?.detail) || catalog.products[keys[0]];
+    const n = top?.per100;
+    const label = n?.kcal !== undefined ? `${n.kcal} kcal, P ${n.p ?? '?'} C ${n.c ?? '?'} F ${n.f ?? '?'} (${top.labelFrom || 'store'})` : 'no label';
+    const unit = top?.unitPrice ? ` (${euro(top.unitPrice.eur)}/${top.unitPrice.per})` : '';
+    console.log(`    ${s.padEnd(10)} ${String(keys.length).padStart(2)} (${withPhoto}) · ${top ? `${top.name.slice(0, 48)} · ${euro(top.price)}${unit} · ${label}` : 'nothing found'}`);
+  }
 }
-console.log(`\n${stats.products} products, ${stats.photos} photos, ${stats.prices} prices, ${stats.errors} errors in ${Math.round((Date.now() - started) / 1000)} s`);
+console.log(`\n${stats.products} products, ${stats.photos} photos, ${stats.prices} prices, ${stats.removed} researched links no longer sold, ${stats.errors} errors in ${Math.round((Date.now() - started) / 1000)} s`);
 if (errors.length) {
   console.log('\nFirst errors:');
   for (const e of errors.slice(0, 12)) console.log(`  ${e.where}: ${e.error}`);

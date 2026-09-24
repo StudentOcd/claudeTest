@@ -47,10 +47,16 @@ export function normalizeOffProduct(p) {
 
 export async function offProduct(http, code) {
   if (!/^\d{6,14}$/.test(String(code))) throw new Error('Barcode must be 6–14 digits');
-  const data = await http.get(`${OFF_BASE}/api/v2/product/${code}?fields=${FIELDS}`, {
-    rateKey: 'off-product',
-    cacheTtlMs: 7 * 24 * 3600 * 1000,
-  });
+  let data;
+  try {
+    data = await http.get(`${OFF_BASE}/api/v2/product/${code}?fields=${FIELDS}`, {
+      rateKey: 'off-product',
+      cacheTtlMs: 7 * 24 * 3600 * 1000,
+    });
+  } catch (err) {
+    if (err.status === 404) return null; // not in Open Food Facts (yet)
+    throw err;
+  }
   if (!data || (data.status !== 1 && data.status !== 'success') || !data.product) return null;
   return normalizeOffProduct({ code, ...data.product });
 }

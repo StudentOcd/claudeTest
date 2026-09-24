@@ -2,7 +2,8 @@
 // Unofficial: reads the same public pages your browser does, slowly, with
 // caching and a robots.txt check. Mercadona has no online shop in Portugal.
 
-import { parseProductPage, parseProductTiles } from './html.js';
+import { decodeEntities, parseProductPage, parseProductTiles } from './html.js';
+import { normalizeText } from '../../src/core/gut.js';
 import { HttpError } from './http.js';
 
 const enc = encodeURIComponent;
@@ -68,22 +69,26 @@ function withStore(store, items) {
 }
 
 /** Search a store. Tries the grid endpoint, then the normal search page. */
+// Search the store's own product list (its sitemaps). The stores' search pages are closed to
+// crawlers in their robots.txt, so Leve never calls them.
 export async function searchStore(http, store, query) {
   const site = siteFor(store);
   const q = String(query || '').trim();
   if (q.length < 2) return { items: [], tried: [], browserUrl: null };
-  const tried = [];
-  for (const url of site.searchUrls(q)) {
-    try {
-      const html = await http.get(url, { ...FETCH_OPTS, rateKey: `store-${store}` });
-      const items = parseProductTiles(html, site);
-      tried.push({ url, ok: true, count: items.length });
-      if (items.length) return { items: withStore(store, items), tried, browserUrl: site.browserSearch(q) };
-    } catch (err) {
-      tried.push({ url, ok: false, error: err.message, code: err.code || null });
-    }
+  const words = normalizeText(q).split(' ').filter((w) => w.length > 1);
+  try {
+    const all = await sitemapProducts(http, store);
+    const items = all
+      .filter((p) => {
+        const t = ` ${normalizeText(p.name)} `;
+        return words.every((w) => t.includes(` ${w}`));
+      })
+      .sort((a, b) => a.name.length - b.name.length)
+      .slice(0, 40);
+    return { items, tried: [{ url: 'sitemap', ok: true, count: items.length }], browserUrl: site.browserSearch(q) };
+  } catch (err) {
+    return { items: [], tried: [{ url: 'sitemap', ok: false, error: err.message, code: err.code || null }], browserUrl: site.browserSearch(q) };
   }
-  return { items: [], tried, browserUrl: site.browserSearch(q) };
 }
 
 /** List the products on a category page. */
@@ -95,11 +100,17 @@ export async function browseCategory(http, store, url) {
 }
 
 /** Details of one product page: price, unit price, pack size, nutrition, ingredients. */
+// Auchan answers removed products with a normal-looking "404" page (HTTP 200).
+const REMOVED = /auc-404error|class="[^"]*\bpage-not-found\b|produto n[aã]o (?:est[aá] )?dispon[ií]vel online|p[aá]gina n[aã]o encontrada/i;
+
 export async function fetchStoreProduct(http, store, url) {
   const site = siteFor(store);
   const safe = assertStoreUrl(store, url);
   const html = await http.get(safe, { ...FETCH_OPTS, rateKey: `store-${store}` });
   const page = parseProductPage(html, safe);
+  if (REMOVED.test(html) || (!page.price && !page.image && !page.per100)) {
+    throw new HttpError('This product is no longer in the online shop', { url: safe, code: 'NOT_FOUND' });
+  }
   const idMatch = [...html.matchAll(site.productHref)].find((m) => safe.includes(m[2]));
   const id = safe.match(/[-/](\d{3,12})\.html/)?.[1] || idMatch?.[2] || null;
   return { store, id, ...page, fetchedAt: new Date().toISOString() };
@@ -119,11 +130,79 @@ export function priceEntryFromProduct(product, mapped = {}) {
     return { ...base, sold: 'weight', eur: perKg };
   }
   if (!(product.price > 0)) return null;
-  const packUnits = mapped.packUnits || product.pack?.units;
+  const perUnit = product.unitPrice?.per === 'unit' && product.unitPrice.eur > 0 ? Math.round(product.price / product.unitPrice.eur) : null;
+  const packUnits = mapped.packUnits || product.pack?.units || (perUnit > 1 ? perUnit : null);
   if (packUnits) return { ...base, sold: 'pack', eur: product.price, packUnits };
   let packG = mapped.packG || product.pack?.drainedG || product.pack?.grams;
   if (!packG && product.unitPrice?.per === 'kg' && product.unitPrice.eur > 0) {
     packG = Math.round((product.price / product.unitPrice.eur) * 1000);
   }
   return { ...base, sold: 'pack', eur: product.price, packG: packG || undefined };
+}
+
+
+// ───────────── Sitemaps: the full, current product list each store publishes for crawlers ─────────────
+
+const SITEMAP_INDEX = {
+  pingodoce: 'https://www.pingodoce.pt/home/sitemap_index.xml',
+  auchan: 'https://www.auchan.pt/sitemap_index.xml',
+};
+const NOT_FOOD = /\/(animais|animal|higiene|limpeza|beleza|perfumaria|bebe|mundo-bebe|puericultura|casa|bricolage|electrodomesticos|papelaria|brinquedos|jardim|saude|parafarmacia|drogaria|tabacaria)(?:[-/]|$)/i;
+
+function nameFromUrl(url) {
+  const parts = new URL(url).pathname.split('/').filter(Boolean);
+  let last = (parts.pop() || '').replace(/\.html$/, '');
+  if (/^\d+$/.test(last)) last = parts.pop() || '';
+  return decodeURIComponent(last).replace(/-\d{3,12}$/, '').replace(/[-_]+/g, ' ').trim();
+}
+
+/** Smaller product photo (400 px) from the store's image service. */
+export function photoUrl(store, url) {
+  if (!url) return url;
+  try {
+    const u = new URL(url);
+    if (store === 'auchan' && !u.pathname.startsWith('/dw/image/') && u.pathname.includes('/on/demandware.static/')) {
+      return `https://www.auchan.pt/dw/image/v2/BFRC_PRD${u.pathname.slice(u.pathname.indexOf('/on/demandware.static/'))}?sw=400&sh=400&sm=fit`;
+    }
+    if (u.pathname.startsWith('/dw/image/')) return `${u.origin}${u.pathname}?sw=400&sh=400&sm=fit`;
+  } catch {
+    // not a URL we can resize
+  }
+  return url;
+}
+
+/**
+ * Every food product a store lists in its sitemaps: [{ store, id, url, name, image }].
+ * Names come from the image sitemaps (or the product's URL slug), photos too.
+ */
+export async function sitemapProducts(http, store) {
+  const site = siteFor(store);
+  const opts = { ...FETCH_OPTS, cacheTtlMs: 24 * 3600 * 1000, rateKey: `store-${store}`, timeoutMs: 60000 };
+  const index = await http.get(SITEMAP_INDEX[store], opts);
+  const maps = [...String(index).matchAll(/<loc>\s*([^<\s]+)\s*<\/loc>/g)].map((m) => m[1]).filter((u) => /-(product|image)\.xml$/.test(u));
+  const byUrl = new Map();
+  for (const map of maps) {
+    const xml = String(await http.get(map, opts));
+    for (const block of xml.split('<url>').slice(1)) {
+      const loc = block.match(/<loc>\s*([^<\s]+)\s*<\/loc>/)?.[1];
+      if (!loc) continue;
+      let host;
+      try {
+        host = new URL(loc).hostname;
+      } catch {
+        continue;
+      }
+      const id = loc.match(/[-/](\d{3,12})\.html/)?.[1];
+      if (!site.hosts.includes(host) || !id || NOT_FOOD.test(new URL(loc).pathname)) continue;
+      const entry = byUrl.get(loc) || { store, id, url: loc, name: null, image: null };
+      const title = block.match(/<image:title>([\s\S]*?)<\/image:title>/)?.[1];
+      const image = block.match(/<image:loc>\s*([^<\s]+)\s*<\/image:loc>/)?.[1];
+      if (title && !entry.name) entry.name = decodeEntities(title.replace(/^<!\[CDATA\[|\]\]>$/g, '')).replace(/\s+/g, ' ').trim();
+      if (image && !entry.image) entry.image = photoUrl(store, image);
+      byUrl.set(loc, entry);
+    }
+  }
+  const out = [...byUrl.values()];
+  for (const p of out) if (!p.name) p.name = nameFromUrl(p.url);
+  return out;
 }

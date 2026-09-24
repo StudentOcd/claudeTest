@@ -44,38 +44,39 @@ function labelOf(product) {
 }
 
 /**
- * Nutrition to use per food: the label of the product you buy at your main store (your
- * pick first, then the researched products), when the label passes the checks.
+ * Nutrition to use per food: the label of the product your list uses at your main store (your
+ * pick, else the first product on the list), when that label passes the checks. Never another
+ * product's label: no label for that product means the reference table.
  * catalog: /api/catalog, choices: productChoice, stores: settings.stores
- * Returns { [foodId]: { per100, source: { kind: 'label', store, name, url } } }
+ * Returns { [foodId]: { per100, source: { kind: 'label', store, name, url, from } } }
  */
 export function labelNutrition({ catalog = {}, choices = {}, stores = [] } = {}) {
   const out = {};
   const products = catalog.products || {};
   const byUrl = new Map(Object.values(products).filter((p) => p.url).map((p) => [p.url, p]));
+  const store = stores[0];
+  if (!store) return out;
   for (const food of FOODS) {
     if (!food.source) continue;
-    const candidates = [];
-    for (const store of stores) {
-      const choice = choices?.[food.id]?.[store];
-      if (choice?.url) candidates.push({ ...(byUrl.get(choice.url) || {}), ...choice, store });
-      for (const key of catalog.foods?.[food.id]?.[store] || []) if (products[key]?.mapped) candidates.push(products[key]);
-      for (const p of STORE_PRODUCTS[food.id]?.[store] || []) if (p.per100) candidates.push(p);
+    const choice = choices?.[food.id]?.[store];
+    let product = null;
+    if (choice?.url) {
+      product = { ...(STORE_PRODUCTS[food.id]?.[store] || []).find((r) => r.url === choice.url), ...(byUrl.get(choice.url) || {}), ...choice, store };
+    } else {
+      const first = (catalog.foods?.[food.id]?.[store] || []).map((k) => products[k]).find((p) => p?.detail);
+      product = first || (STORE_PRODUCTS[food.id]?.[store] || []).find((r) => r.per100) || null;
     }
-    for (const p of candidates) {
-      const per100 = labelOf(p);
-      if (!per100 || !checkLabel(per100, food.per100).ok) continue;
-      out[food.id] = {
-        per100: {
-          ...per100,
-          fib: per100.fib ?? food.per100.fib,
-          sugar: per100.sugar ?? food.per100.sugar,
-          salt: per100.salt ?? food.per100.salt,
-        },
-        source: { kind: 'label', store: p.store, name: p.name, url: p.url || null },
-      };
-      break;
-    }
+    const per100 = labelOf(product);
+    if (!per100 || !checkLabel(per100, food.per100).ok) continue;
+    out[food.id] = {
+      per100: {
+        ...per100,
+        fib: per100.fib ?? food.per100.fib,
+        sugar: per100.sugar ?? food.per100.sugar,
+        salt: per100.salt ?? food.per100.salt,
+      },
+      source: { kind: 'label', store, name: product.name, url: product.url || null, from: product.labelFrom || 'store', offUrl: product.offUrl || null },
+    };
   }
   return out;
 }
