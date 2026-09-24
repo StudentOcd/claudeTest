@@ -7,6 +7,11 @@ import { STORE_PRODUCTS } from './products.js';
 
 const round1 = (x) => Math.round(x * 10) / 10;
 
+/** Energy, protein, carbohydrate and fat all present: enough to plan with. */
+export function isCompleteLabel(per100) {
+  return Boolean(per100) && ['kcal', 'p', 'c', 'f'].every((k) => typeof per100[k] === 'number' && Number.isFinite(per100[k]));
+}
+
 /**
  * Is this per-100 g label complete and self-consistent?
  * Energy must match its own macros (EU label factors: 4 kcal/g protein and carbohydrate,

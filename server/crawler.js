@@ -14,6 +14,23 @@ import { matchesFood } from '../src/core/match.js';
 import { STORE_PRODUCTS, categoryUrl, productsFor } from '../src/core/products.js';
 import { browseCategory, fetchStoreProduct, priceEntryFromProduct, searchStore } from './connectors/stores.js';
 import { matchMercadona, mercadonaProduct, mercadonaProducts } from './connectors/mercadona.js';
+import { offProduct } from './connectors/openfoodfacts.js';
+import { isCompleteLabel } from '../src/core/labels.js';
+
+/**
+ * The nutrition label of this exact product: from the store's page, else from Open Food Facts
+ * by barcode (label values transcribed from photos of the pack).
+ */
+export async function labelFor(http, { per100 = null, ean = null } = {}, { useOff = true } = {}) {
+  if (isCompleteLabel(per100)) return { per100, labelFrom: 'store' };
+  if (useOff && /^\d{8,14}$/.test(String(ean || ''))) {
+    const off = await offProduct(http, ean);
+    if (off && isCompleteLabel(off.per100)) {
+      return { per100: off.per100, labelFrom: 'openfoodfacts', offUrl: off.url, offIngredients: off.ingredientsText || null };
+    }
+  }
+  return { per100: per100 || null, labelFrom: per100 ? 'store' : null };
+}
 
 export const CATALOG_VERSION = 1;
 
@@ -104,6 +121,7 @@ export async function crawlStores(http, {
   onProgress = () => {},
   maxPerFood = 10,
   forceImages = false,
+  offLabels = true,
 } = {}) {
   const prices = {};
   const stats = { products: 0, photos: 0, prices: 0, errors: 0 };
@@ -153,6 +171,12 @@ export async function crawlStores(http, {
       for (const mapped of known.slice(0, 3)) {
         try {
           const page = await fetchStoreProduct(http, store, mapped.url);
+          let label = { per100: page.per100, labelFrom: page.per100 ? 'store' : null };
+          try {
+            label = await labelFor(http, page, { useOff: offLabels });
+          } catch (err) {
+            fail(`openfoodfacts ${page.ean}`, err);
+          }
           const rec = record(
             catalog,
             foodId,
@@ -165,8 +189,10 @@ export async function crawlStores(http, {
               price: page.price,
               unitPrice: page.unitPrice,
               pack: page.pack,
-              per100: page.per100,
-              ingredientsText: page.ingredientsText,
+              per100: label.per100,
+              labelFrom: label.labelFrom,
+              offUrl: label.offUrl,
+              ingredientsText: page.ingredientsText || label.offIngredients,
               ean: page.ean,
               available: page.available,
               fetchedAt: page.fetchedAt,
@@ -224,6 +250,13 @@ export async function crawlStores(http, {
               p = { ...m, ...(await mercadonaProduct(http, m.id)) };
             } catch {
               p = m;
+            }
+            // Mercadona's shop has no nutrition table: the label comes from Open Food Facts.
+            try {
+              const label = await labelFor(http, { ean: p.ean }, { useOff: offLabels });
+              if (label.per100) p = { ...p, per100: label.per100, labelFrom: label.labelFrom, offUrl: label.offUrl, ingredientsText: p.ingredientsText || label.offIngredients };
+            } catch (err) {
+              fail(`openfoodfacts ${p.ean}`, err);
             }
           }
           const rec = record(catalog, foodId, { ...p, fetchedAt: new Date().toISOString(), detail: i === 0 }, { mapped: i === 0 });

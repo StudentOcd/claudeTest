@@ -12,7 +12,7 @@ import { HevyClient, createProgram, fetchTemplates, previewProgram, syncWorkouts
 import { offProduct, offSearch } from './connectors/openfoodfacts.js';
 import { latestByStore, recentPrices } from './connectors/openprices.js';
 import { browseCategory, fetchStoreProduct, searchStore, STORE_SITES } from './connectors/stores.js';
-import { crawlStores, downloadPhoto, loadCatalog, saveCatalog } from './crawler.js';
+import { crawlStores, downloadPhoto, labelFor, loadCatalog, saveCatalog } from './crawler.js';
 import path from 'node:path';
 
 export class ApiError extends Error {
@@ -561,6 +561,12 @@ export function registerRoutes(router, ctx) {
     const store = oneOf(query.store, 'store', ['pingodoce', 'auchan']);
     try {
       const page = await fetchStoreProduct(http, store, text(query.url, 'url', 500));
+      try {
+        const label = await labelFor(http, page);
+        Object.assign(page, { per100: label.per100, labelFrom: label.labelFrom, offUrl: label.offUrl });
+      } catch {
+        // the store page's own values stay
+      }
       // Keep the photo so the product shows up with it everywhere.
       if (page.image) {
         try {
@@ -568,7 +574,7 @@ export function registerRoutes(router, ctx) {
           const key = `${store}:${page.id || ''}`;
           const prev = fresh.products[key] || {};
           const file = await downloadPhoto(http, path.join(ctx.productsDir, 'img'), store, page.id || page.url, page.image, { force: Boolean(prev.sourceImage && prev.sourceImage !== page.image) });
-          fresh.products[key] = { ...prev, key, store, id: page.id, name: page.name, url: page.url, price: page.price, unitPrice: page.unitPrice, pack: page.pack, per100: page.per100, ingredientsText: page.ingredientsText, image: file, sourceImage: page.image, imageFrom: 'page', fetchedAt: page.fetchedAt, detail: true };
+          fresh.products[key] = { ...prev, key, store, id: page.id, name: page.name, url: page.url, price: page.price, unitPrice: page.unitPrice, pack: page.pack, per100: page.per100, labelFrom: page.labelFrom, offUrl: page.offUrl, ean: page.ean, ingredientsText: page.ingredientsText, image: file, sourceImage: page.image, imageFrom: 'page', fetchedAt: page.fetchedAt, detail: true };
           if (query.foodId && FOOD_BY_ID[query.foodId]) {
             const list = ((fresh.foods[query.foodId] ||= {})[store] ||= []);
             if (!list.includes(key)) list.push(key);

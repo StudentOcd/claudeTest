@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import {
   decodeEntities, extractIngredients, htmlToText, parseEuro, parseNutrition, parsePackSize, parseProductPage,
-  parseProductTiles, parseUnitPrice,
+  parseProductTiles, parseUnitPrice, readEnergy,
 } from '../server/connectors/html.js';
 import { STORE_SITES, priceEntryFromProduct } from '../server/connectors/stores.js';
 import { isAllowed, parseRobots } from '../server/connectors/robots.js';
@@ -188,4 +188,46 @@ Disallow: /
   assert.equal(isAllowed(groups, 'BadBot/2', '/anything'), false);
   assert.equal(isAllowed(parseRobots(''), ua, '/x'), true);
   assert.equal(isAllowed(parseRobots('User-agent: *\nDisallow:'), ua, '/x'), true);
+});
+
+// Pingo Doce product page (egg, Sept 2026): tab titles first, a long description, then the table
+// with units in the first column ("Energia (kcal) | 135.0").
+const PD_EGGS = `<html><head><title>Ovos de Solo Classe M Pingo Doce</title></head><body>
+<h1 class="product-name">Ovos de Solo Classe M Pingo Doce</h1>
+<ul class="nav-tabs"><li><a>Descrição</a></li><li><a>Informação Nutricional</a></li><li><a>Avaliações</a></li><li><a>Sustentabilidade</a></li><li><a>Dados legais</a></li></ul>
+<div class="tab-pane"><p>${'Ovos frescos de galinhas criadas no solo, com uma alimentação equilibrada. '.repeat(60)}</p></div>
+<div class="tab-pane">
+  <div class="nutrition"><div>Composição Nutricional</div><div>Valores médios por 100 g de produto (não preparado)</div>
+  <table><tr><th>Nutriente</th><th>Quantidade</th></tr>
+  <tr><td>Energia (kj)</td><td>563.0</td></tr><tr><td>Energia (kcal)</td><td>135.0</td></tr>
+  <tr><td>Lípidos (g)</td><td>9.3</td></tr><tr><td>Saturados (g)</td><td>4.1</td></tr>
+  <tr><td>Hidratos de Carbono (g)</td><td>1.0</td></tr><tr><td>Açucares (g)</td><td>0.5</td></tr>
+  <tr><td>Fibras (g)</td><td>0.1</td></tr><tr><td>Proteínas (g)</td><td>13.0</td></tr><tr><td>Sal (g)</td><td>0.3</td></tr></table></div>
+  <div><div>Porções por embalagem</div><div>6</div><div>Ingredientes</div><div>Ovos Frescos Categoria A Classe M</div>
+  <div>Alergénios</div><div>Contém Ovo.</div><div>Alegações</div><div>Alto teor em proteína. O teor de sal deve-se à presença de sódio naturalmente presente</div></div>
+  <div>Vitaminas e Sais Minerais</div><table><tr><th>Nutriente</th><th>Quantidade</th></tr><tr><td>Indefinido</td><td>0</td></tr></table>
+</div></body></html>`;
+
+test('Pingo Doce label with units in the first column (egg page)', () => {
+  const p = parseProductPage(PD_EGGS, 'https://www.pingodoce.pt/home/produtos/ovos-889028.html');
+  assert.deepEqual(p.per100, { kcal: 135, f: 9.3, satFat: 4.1, c: 1, sugars: 0.5, fib: 0.1, p: 13, salt: 0.3 });
+  assert.equal(p.ingredientsText, 'Ovos Frescos Categoria A Classe M');
+});
+
+test('label and value on separate lines, and every way of writing energy', () => {
+  const lines = 'Informação nutricional\nValor energético\n1180 kJ / 282 kcal\nLípidos\n3,2 g\nHidratos de carbono\n55 g\nProteínas\n9,1 g\nSal\n1,2 g';
+  assert.deepEqual(parseNutrition(lines), { kcal: 282, f: 3.2, c: 55, p: 9.1, salt: 1.2 });
+  assert.deepEqual(readEnergy('Energia (kcal) 135.0'), { kcal: 135 });
+  assert.deepEqual(readEnergy('Energia (kJ) 563.0'), { kj: 563 });
+  assert.deepEqual(readEnergy('Energia 563 kJ / 135 kcal'), { kcal: 135, kj: 563 });
+  assert.deepEqual(readEnergy('Energia (kJ/kcal) 563/135'), { kj: 563, kcal: 135 });
+  assert.deepEqual(readEnergy('Energia por 100 g (kcal) 135'), { kcal: 135 });
+  assert.deepEqual(readEnergy('Valor energético 563 / 135'), { kj: 563, kcal: 135 });
+  // kJ only: converted
+  assert.equal(parseNutrition('Informação nutricional\nEnergia (kJ) 563\nProteínas (g) 13').kcal, 135);
+});
+
+test('schema.org nutrition in JSON-LD', () => {
+  const html = `<script type="application/ld+json">{"@type":"Product","name":"Atum","nutrition":{"@type":"NutritionInformation","calories":"104 kcal","proteinContent":"24 g","fatContent":"0,8 g","carbohydrateContent":"0 g","saltContent":"0,9 g"}}</script>`;
+  assert.deepEqual(parseProductPage(html).per100, { kcal: 104, p: 24, f: 0.8, c: 0, salt: 0.9 });
 });

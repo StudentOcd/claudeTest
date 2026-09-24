@@ -158,30 +158,106 @@ const numberIn = (s) => {
   return m ? Number(m[1].replace(',', '.')) : null;
 };
 
-// Per-100 g values from a nutrition table rendered as text lines.
-export function parseNutrition(text) {
-  const t = String(text ?? '');
-  const anchor = t.search(/(informa[cç][aã]o nutricional|valores? nutricion|declara[cç][aã]o nutricional|tabela nutricional|nutrition)/i);
-  const zone = anchor >= 0 ? t.slice(anchor, anchor + 2500) : t;
+// Headings that start a nutrition table on Portuguese / Spanish / English pages.
+const NUTRITION_HEADING = /(informa[cç][aã]o nutricional|valores? nutricion|declara[cç][aã]o nutricional|tabela nutricional|composi[cç][aã]o nutricional|valores m[eé]dios|informaci[oó]n nutricional|nutrition)/i;
+
+// "por 100 g", "100 ml", "(g)", "(mg)" are labels, not values.
+const stripLabels = (s) => String(s)
+  .replace(/(?:por|per|em|in)?\s*100\s*(?:g|gr|ml)\b/gi, ' ')
+  .replace(/\(\s*(?:g|gr|mg|µg|mcg|%)\s*\)/gi, ' ');
+
+/**
+ * Energy from one row, whichever way the store writes it:
+ *   "563 kJ / 135 kcal", "Energia (kcal) 135.0", "Energia (kJ) 563.0", "(kJ/kcal) 563/135", "563 / 135"
+ */
+export function readEnergy(row) {
+  const t = stripLabels(row).toLowerCase().replace(/(\d),(\d)/g, '$1.$2');
   const out = {};
-  for (const rawLine of zone.split('\n')) {
-    const line = rawLine.trim();
-    if (!line) continue;
+  const numBefore = (u) => t.match(new RegExp(`(\\d+(?:\\.\\d+)?)\\s*${u}\\b`));
+  let m = numBefore('kcal');
+  if (m) out.kcal = Number(m[1]);
+  m = numBefore('kj');
+  if (m) out.kj = Number(m[1]);
+  if (out.kcal !== undefined || out.kj !== undefined) return out;
+  // Units named first, numbers after them, in the same order.
+  const units = [...t.matchAll(/kcal|kj/g)];
+  const tail = units.length ? t.slice(units[units.length - 1].index + units[units.length - 1][0].length) : t;
+  const nums = [...tail.matchAll(/\d+(?:\.\d+)?/g)].map((x) => Number(x[0]));
+  if (units.length && nums.length) {
+    units.forEach((u, i) => {
+      if (nums[i] !== undefined) out[u[0]] = nums[i];
+    });
+    return out;
+  }
+  // No units at all: "563 / 135" is kJ then kcal when the first is ~4.184 × the second.
+  if (nums.length >= 2 && Math.abs(nums[0] / 4.184 - nums[1]) <= Math.max(3, nums[1] * 0.05)) return { kj: nums[0], kcal: nums[1] };
+  return out;
+}
+
+function readBlock(lines) {
+  const out = {};
+  let kj = null;
+  for (let i = 0; i < lines.length; i++) {
+    const line = lines[i];
     const nut = NUTRIENTS.find((n) => n.re.test(line));
-    if (!nut || out[nut.key] !== undefined) continue;
-    const after = line.slice(line.search(nut.re));
+    if (!nut) continue;
+    let rest = line.slice(line.search(nut.re)).replace(nut.re, ' ');
+    // Tables rendered cell by cell: the value sits on the next line.
+    const next = lines[i + 1] || '';
+    if (!/\d/.test(stripLabels(rest).replace(/k?cal|kj/gi, '')) && /^[<≈~\s]*\d/.test(next) && !NUTRIENTS.some((n) => n.re.test(next))) rest += ` ${next}`;
     if (nut.key === 'kcal') {
-      const kcal = after.match(/(\d+(?:[.,]\d+)?)\s*kcal/i);
-      if (kcal) out.kcal = Number(kcal[1].replace(',', '.'));
-      else {
-        const kj = after.match(/(\d+(?:[.,]\d+)?)\s*kj/i);
-        if (kj) out.kcal = Math.round(Number(kj[1].replace(',', '.')) / 4.184);
-      }
+      const e = readEnergy(rest);
+      if (e.kcal !== undefined && out.kcal === undefined) out.kcal = e.kcal;
+      if (e.kj !== undefined && kj === null) kj = e.kj;
       continue;
     }
-    const v = numberIn(after.replace(nut.re, ''));
+    if (out[nut.key] !== undefined) continue;
+    const v = numberIn(stripLabels(rest));
     if (v !== null) out[nut.key] = v;
   }
+  if (out.kcal === undefined && kj !== null) out.kcal = Math.round(kj / 4.184);
+  return out;
+}
+
+const filled = (o) => Object.keys(o || {}).length + (o?.kcal !== undefined ? 2 : 0);
+
+// Per-100 g values from a nutrition table rendered as text lines. Every nutrition heading on the
+// page is tried (the first is often just a tab title far from the table); the fullest read wins.
+export function parseNutrition(text) {
+  const lines = String(text ?? '').split('\n').map((l) => l.trim()).filter(Boolean);
+  const starts = [];
+  lines.forEach((l, i) => {
+    if (NUTRITION_HEADING.test(l)) starts.push(i);
+  });
+  let best = null;
+  for (const s of starts.length ? starts : [0]) {
+    const read = readBlock(lines.slice(s, s + 40));
+    if (filled(read) >= filled(best)) best = read; // ties: the heading nearest the table wins
+  }
+  return best && (best.kcal !== undefined || best.p !== undefined) ? best : null;
+}
+
+// schema.org NutritionInformation in JSON-LD, when a store publishes it.
+export function ldNutrition(objs) {
+  const prod = objs.find((o) => isType(o, 'Product') && o.nutrition) || objs.find((o) => isType(o, 'NutritionInformation'));
+  const n = prod?.nutrition || (prod && isType(prod, 'NutritionInformation') ? prod : null);
+  if (!n) return null;
+  const val = (x) => {
+    if (x === undefined || x === null) return undefined;
+    const m = String(x).replace(',', '.').match(/\d+(?:\.\d+)?/);
+    return m ? Number(m[0]) : undefined;
+  };
+  const out = {
+    kcal: /kj/i.test(String(n.calories)) && !/kcal/i.test(String(n.calories)) ? Math.round(val(n.calories) / 4.184) : val(n.calories),
+    p: val(n.proteinContent),
+    f: val(n.fatContent),
+    satFat: val(n.saturatedFatContent),
+    c: val(n.carbohydrateContent),
+    sugars: val(n.sugarContent),
+    fib: val(n.fiberContent),
+    salt: val(n.saltContent) ?? (val(n.sodiumContent) !== undefined ? Math.round(val(n.sodiumContent) * 2.5 * 100) / 100 : undefined),
+  };
+  for (const k of Object.keys(out)) if (out[k] === undefined) delete out[k];
   return out.kcal !== undefined || out.p !== undefined ? out : null;
 }
 
@@ -247,9 +323,18 @@ function ownProductImage(html, url) {
   return null;
 }
 
+// The fuller of two nutrition reads, with gaps filled from the other.
+function pickNutrition(a, b) {
+  if (!a) return b;
+  if (!b) return a;
+  const [main, extra] = filled(a) >= filled(b) ? [a, b] : [b, a];
+  return { ...extra, ...main };
+}
+
 export function parseProductPage(html, url = '') {
   const src = String(html ?? '');
-  const ld = ldProduct(jsonLdObjects(src));
+  const ldObjs = jsonLdObjects(src);
+  const ld = ldProduct(ldObjs);
   const text = htmlToText(src);
   const h1 = src.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
   const name = ld?.name || metaContent(src, 'og:title') || (h1 ? clean(h1[1]) : null);
@@ -259,7 +344,7 @@ export function parseProductPage(html, url = '') {
     const m = text.match(/(\d+,\d{2})\s*€(?!\s*\/)/);
     if (m) price = parseEuro(m[1]);
   }
-  const eanText = text.match(/\b(?:EAN|C[oó]digo de barras)\s*:?\s*(\d{8,14})\b/i);
+  const eanText = text.match(/\b(?:EAN(?:-?13)?|GTIN|C[oó]digo(?: de barras| EAN)?)\s*:?\s*(\d{8,14})\b/i);
   return {
     url,
     name: name ? name.replace(/\s*\|\s*(Auchan|Pingo Doce).*$/i, '').trim() : null,
@@ -272,7 +357,7 @@ export function parseProductPage(html, url = '') {
     available: ld?.available ?? null,
     image: absolute(ld?.image || metaContent(src, 'og:image') || ownProductImage(src, url), url),
     pack: parsePackSize(name || ''),
-    per100: parseNutrition(text),
+    per100: pickNutrition(ldNutrition(ldObjs), parseNutrition(text)),
     ingredientsText: extractIngredients(text),
   };
 }
