@@ -1,6 +1,7 @@
 import { app } from '../app.js';
 import { api } from '../api.js';
 import { html, fmt, toast, formData, pageHead, STORE_NAMES } from '../ui.js';
+import { ACCENTS, MODES, applyTheme } from '../theme.js';
 import { LIFESTYLES, PACES } from '/core/nutrition.js';
 import { TRIGGERS } from '/core/gut.js';
 
@@ -18,9 +19,17 @@ export default {
     const p = app.profile;
     const s = app.settings;
     const t = app.targets();
+    const look = s.appearance || { accent: 'blue', mode: 'system' };
     const opt = (v, cur, label) => html`<option value="${v}" ${String(v) === String(cur) ? 'selected' : ''}>${label}</option>`;
     return html`
       ${pageHead('Settings')}
+      <div class="card">
+        <div class="card-head"><h2>Appearance</h2></div>
+        <div class="swatches" role="group" aria-label="Colour">${ACCENTS.map(([id, label, c1, c2]) => html`<button type="button" class="swatch ${look.accent === id ? 'on' : ''}" data-action="accent" data-value="${id}" aria-pressed="${look.accent === id}">
+          <i style="background:linear-gradient(135deg, ${c1}, ${c2})"></i>${label}</button>`)}</div>
+        <div class="seg full mt" role="group" aria-label="Light or dark">${MODES.map(([id, label]) => html`<button type="button" class="${look.mode === id ? 'on' : ''}" data-action="look-mode" data-value="${id}">${label}</button>`)}</div>
+        <p class="tiny muted mt">Auto follows your phone's light/dark setting.</p>
+      </div>
       <form class="card" data-submit="profile">
         <div class="card-head"><h2>You</h2></div>
         <div class="grid2">
@@ -94,6 +103,18 @@ export default {
   },
 
   actions: {
+    async accent(el) {
+      const appearance = { ...app.settings.appearance, accent: el.dataset.value };
+      applyTheme(appearance);
+      await app.saveSettings({ appearance });
+      return 'render';
+    },
+    async 'look-mode'(el) {
+      const appearance = { ...app.settings.appearance, mode: el.dataset.value };
+      applyTheme(appearance);
+      await app.saveSettings({ appearance });
+      return 'render';
+    },
     async profile(form) {
       const d = formData(form);
       const patch = {

@@ -31,6 +31,8 @@ export const app = {
   watchCrawl() {
     if (this.watching) return this.watching;
     this.watching = (async () => {
+      let ticks = 0;
+      let shownPhotos = 0;
       for (;;) {
         try {
           this.crawl = await api.get('/api/stores/crawl');
@@ -40,6 +42,13 @@ export const app = {
         window.dispatchEvent(new Event('leve:crawl'));
         if (this.crawl?.status !== 'running') break;
         await new Promise((r) => setTimeout(r, 1500));
+        // Show photos as they arrive, unless you're typing or have a sheet open.
+        if (++ticks % 4 === 0 && (this.crawl.photos || 0) > shownPhotos) {
+          shownPhotos = this.crawl.photos;
+          await this.loadCatalog();
+          const busy = document.activeElement?.matches?.('input, textarea, select') || document.querySelector('.modal');
+          if (!busy) window.dispatchEvent(new Event('leve:render'));
+        }
       }
       const job = this.crawl?.status === 'done' ? this.crawl : null;
       if (job) {

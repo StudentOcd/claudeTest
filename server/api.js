@@ -84,6 +84,8 @@ const PROFILE_FIELDS = {
   goalWeightKg: (v) => number(v, 'goal weight', { min: 35, max: 350, nullable: true }),
 };
 
+const ACCENTS = ['blue', 'green', 'purple', 'orange'];
+
 function validateSettings(body, current) {
   const out = {};
   if ('stores' in body) {
@@ -96,6 +98,10 @@ function validateSettings(body, current) {
   if ('liveStoreLookups' in body) out.liveStoreLookups = bool(body.liveStoreLookups, 'live store lookups');
   if ('hevyAutoPushWeight' in body) out.hevyAutoPushWeight = bool(body.hevyAutoPushWeight, 'Hevy weight sync');
   if ('contactEmail' in body) out.contactEmail = text(body.contactEmail, 'contact email', 120);
+  if ('appearance' in body) {
+    const a = { ...current.appearance, ...(body.appearance || {}) };
+    out.appearance = { accent: oneOf(a.accent, 'colour', ACCENTS), mode: oneOf(a.mode, 'mode', ['system', 'light', 'dark']) };
+  }
   if ('exclusions' in body) {
     if (!Array.isArray(body.exclusions)) throw bad('exclusions must be a list');
     out.exclusions = [...new Set(body.exclusions)].map((t) => oneOf(t, 'exclusion', EXCLUSION_TAGS));
@@ -581,10 +587,11 @@ export function registerRoutes(router, ctx) {
   });
 
   // Catalogue of real store products (bundled with the app + your own crawls).
+  let liveCatalog = null; // the catalogue a running crawl is filling in
   const catalog = async () => {
-    if (catalogCache) return catalogCache;
+    if (catalogCache && !liveCatalog) return catalogCache;
     const bundled = await loadCatalog(ctx.bundledProductsDir);
-    const fresh = await loadCatalog(ctx.productsDir);
+    const fresh = liveCatalog || (await loadCatalog(ctx.productsDir));
     const foods = {};
     for (const src of [fresh, bundled]) {
       for (const [foodId, byStore] of Object.entries(src.foods || {})) {
@@ -617,6 +624,7 @@ export function registerRoutes(router, ctx) {
     (async () => {
       try {
         const current = await loadCatalog(ctx.productsDir);
+        liveCatalog = current;
         const res = await crawlStores(http, {
           stores,
           foodIds,
@@ -627,12 +635,13 @@ export function registerRoutes(router, ctx) {
           onProgress: ({ step, total, message, photos, products }) => Object.assign(job, { done: step, total, message, photos, products }),
         });
         await saveCatalog(ctx.productsDir, res.catalog);
-        catalogCache = null;
         for (const [foodId, entries] of Object.entries(res.prices)) for (const e of entries) addPrice(S(), foodId, e);
         Object.assign(job, { updated: res.stats.prices, photos: res.stats.photos, products: res.stats.products, errors: res.errors.slice(0, 50) });
       } catch (err) {
         job.errors.push({ where: 'crawler', error: err.message });
       }
+      liveCatalog = null;
+      catalogCache = null;
       job.status = 'done';
       job.done = job.total;
       job.finishedAt = new Date().toISOString();

@@ -15,6 +15,7 @@ import settings from './views/settings.js';
 import guide from './views/guide.js';
 import { icon } from './icons.js';
 import { crawlCard } from './photos.js';
+import { applyTheme } from './theme.js';
 import { PHASES } from '/core/nutrition.js';
 
 const VIEWS = { today, plan, recipe, recipes: recipesView, shop, progress, gym, more, products, gut, settings, guide };
@@ -133,6 +134,7 @@ async function start() {
   drawShell();
   try {
     await Promise.all([app.load(), app.loadCatalog()]);
+    applyTheme(app.settings.appearance);
   } catch (err) {
     root.innerHTML = `<div class="card"><h2>Can't reach the Leve server</h2><p class="small">${err.message}</p><p class="small">Is <code>npm start</code> running on your computer?</p></div>`;
     return;

@@ -228,7 +228,7 @@ export default {
         <button class="${app.settings.shoppingMode === 'main' ? 'on' : ''}" data-action="mode" data-value="main">All at ${STORE_NAMES[main]}</button>
       </div>
       <div data-crawl-status>${app.crawlRunning() ? crawlCard(app.crawl) : refreshNote || ''}</div>
-      ${hasPhotos() ? '' : html`<div class="callout info mb">${icon('camera')}<div class="small"><b>Product photos aren't downloaded yet.</b> Tap <b>Update</b> and Leve fetches the real products, photos and prices from Pingo Doce, Auchan and Mercadona (the computer running Leve needs internet access).</div></div>`}
+      ${hasPhotos() || app.crawlRunning() ? '' : html`<div class="callout info mb">${icon('camera')}<div class="small"><b>Product photos aren't downloaded yet.</b> Tap <b>Update</b> and Leve fetches the real products, photos and prices from Pingo Doce, Auchan and Mercadona (the computer running Leve needs internet access).</div></div>`}
       ${avoid.length ? html`<details class="card" data-remember="avoid"><summary>${icon('triangle-alert')} Watch out on the shelf <span class="chip warn" style="margin-left:6px">${avoid.length}</span></summary>
         ${avoid.map((a) => html`<div class="small" style="margin-bottom:6px">${storeChip(a.store)} <b>${a.name}</b>. ${a.reason}</div>`)}</details>` : ''}
       ${stores.map((s) => {

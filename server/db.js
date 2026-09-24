@@ -44,6 +44,7 @@ export function defaultState() {
       contactEmail: '',
       location: { lat: 38.7223, lon: -9.1393, radiusKm: 25, label: 'Lisboa' },
       hevyAutoPushWeight: false,
+      appearance: { accent: 'blue', mode: 'system' },
     },
     weights: [],
     days: {},
@@ -72,6 +73,7 @@ export function migrate(state) {
   for (const key of ['profile', 'settings', 'hevy']) out[key] = { ...def[key], ...(state?.[key] || {}) };
   out.settings.triggers = { ...DEFAULT_TRIGGER_SETTINGS, ...(state?.settings?.triggers || {}) };
   out.settings.location = { ...def.settings.location, ...(state?.settings?.location || {}) };
+  out.settings.appearance = { ...def.settings.appearance, ...(state?.settings?.appearance || {}) };
   for (const key of ['days', 'planOverrides', 'prices', 'productChoice', 'pantry', 'shoppingChecked']) {
     if (!out[key] || typeof out[key] !== 'object' || Array.isArray(out[key])) out[key] = {};
   }

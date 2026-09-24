@@ -109,19 +109,27 @@ function weighCard(date) {
   const trend = app.trend();
   const rate = weeklyRate(app.state.weights, { endDate: date });
   const todays = app.state.weights.find((w) => w.date === date);
+  const lastWaist = [...app.state.weights].reverse().find((w) => typeof w.waistCm === 'number');
   return html`
     <form class="card" data-submit="weigh">
       <div class="row">
         <div class="tile-ic">${icon('scale')}</div>
         <div class="grow"><h3>Morning weigh-in</h3>
           <div class="tiny muted">${trend ? html`Trend <b>${fmt.kg(trend.trend)}</b>${rate ? html` · ${fmt.signed(rate.kgPerWeek, 2)} kg/week` : ''}` : 'After the toilet, before food or drink'}</div></div>
-        ${todays ? html`<span class="chip ok">${icon('check')} ${fmt.kg(todays.kg)}</span>` : ''}
+        ${todays ? html`<span class="chip ok">${icon('check')} saved</span>` : ''}
       </div>
       <div class="row mt">
-        <input class="grow" name="kg" type="number" step="0.1" min="30" max="350" placeholder="kg" value="${todays?.kg ?? ''}" aria-label="Weight in kg" required>
-        <input class="grow" name="waistCm" type="number" step="0.5" placeholder="waist cm" value="${todays?.waistCm ?? ''}" aria-label="Waist in cm (weekly)">
-        <button class="btn primary" type="submit">Save</button>
+        <label class="suffix grow" style="margin:0"><span class="sr">Weight</span>
+          <input class="input-big" name="kg" type="number" inputmode="decimal" step="0.1" min="30" max="350" placeholder="${trend ? trend.trend.toFixed(1) : 'Weight'}" value="${todays?.kg ?? ''}" required>
+          <em>kg</em></label>
+        <button class="btn primary" type="submit" style="min-height:52px">Save</button>
       </div>
+      <details class="mt" data-remember="waist" ${openAttr('waist', Boolean(todays?.waistCm))}>
+        <summary class="small muted" style="font-weight:600">Waist too? <span class="tiny">(optional, once a week${lastWaist ? `, last ${lastWaist.waistCm} cm` : ''})</span></summary>
+        <label class="suffix" style="margin:0"><span class="sr">Waist at the belly button</span>
+          <input name="waistCm" type="number" inputmode="decimal" step="0.5" min="40" max="250" placeholder="Waist at the belly button" value="${todays?.waistCm ?? ''}">
+          <em>cm</em></label>
+      </details>
     </form>`;
 }
 
