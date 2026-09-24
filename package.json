@@ -1,0 +1,17 @@
+{
+  "name": "leve",
+  "version": "1.0.0",
+  "description": "Leve: a gentle fat-loss coach for a sensitive gut. Meal plans with quantities, weight trend, Hevy sync and Lisbon supermarket prices.",
+  "type": "module",
+  "private": true,
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "test": "node --test",
+    "check:connectors": "node scripts/check-connectors.js"
+  },
+  "license": "MIT"
+}

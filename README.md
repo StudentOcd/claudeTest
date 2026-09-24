@@ -1,0 +1,119 @@
+# Leve: gentle fat-loss coach for a sensitive gut
+
+Leve is a small personal web app (it works on your phone too). It turns a fat-loss plan into daily actions:
+
+- **Daily targets.** Calories, protein, fat, carbs and fibre from your profile. Weeks 1–2 are an easier "settle" phase, then a moderate deficit. Every week it checks your weight trend and suggests adjustments.
+- **Meal plan with exact quantities.** 24 simple recipes, all dairy-free with no onion, garlic or sweeteners (one optional lactose-free test recipe for later). Portions are rescaled to your targets: raw weights, cooked weights, eggs, slices and teaspoons. Each recipe has step-by-step cooking (air fryer, oven, pan, saucepan), batch-cooking suggestions and a one-tap meal swap.
+- **Gradual gut transition.** Three phases: *Settle → Build → Expand*. A 30-second symptom check (bloating, pain, urgency, reflux, Bristol stool type) keeps you in a phase or moves you on. Leve also flags foods that may be triggers.
+- **Shopping list for Lisbon supermarkets.** Every food is linked to real **Pingo Doce** and **Auchan** products. Prices can be refreshed from the stores' websites, and you can type in prices from **Mercadona** receipts. The list works out packs to buy, the cost per store and what's left over.
+- **Label checker.** Flags lactose, sugar alcohols (sorbitol, maltitol…), sweeteners, onion/garlic, inulin and more, in Portuguese labels. It works on store product pages, Open Food Facts barcodes or any pasted ingredient list.
+- **Weight trend.** A smoothed trend line, weekly rate, waist tracking, and a maintenance estimate learned from your own data.
+- **Hevy integration.** Syncs your workouts and shows sessions per week and strength trends (estimated 1RM). It can **create the 3×/week full-body programme in your Hevy app** and syncs body weight both ways.
+
+Everything runs on your own computer. Your data stays in one file (`data/leve.json`).
+
+---
+
+## 1. Start it
+
+You need [Node.js](https://nodejs.org) **20 or newer**. There are no other dependencies and no `npm install`.
+
+```bash
+git clone <this repo> leve && cd leve
+npm start
+```
+
+Open **http://localhost:3000**. The first screen is pre-filled with your details (26 y, 167 cm, 95 kg, sedentary, lifting 3×/week). Press **Start my plan today**.
+
+## 2. Use it on your phone
+
+Run Leve on your computer so the phone can reach it (a password is required whenever Leve listens on the network):
+
+```bash
+HOST=0.0.0.0 APP_PASSWORD=choose-something npm start
+# Windows PowerShell:  $env:HOST="0.0.0.0"; $env:APP_PASSWORD="choose-something"; npm start
+```
+
+The terminal prints an address like `http://192.168.1.20:3000`. Open it on your phone (same Wi-Fi) and log in with any username plus that password. Then add it to your home screen.
+
+To use it **inside the supermarket, away from home Wi-Fi**, install [Tailscale](https://tailscale.com) (free) on both devices. Your phone then reaches the computer from anywhere. With `tailscale serve`, you also get HTTPS, which turns on offline mode and camera barcode scanning.
+
+## 3. Connect Hevy (optional)
+
+Hevy's API requires **Hevy Pro**.
+
+1. On the web, open [hevy.com/settings?developer](https://hevy.com/settings?developer) and create an API key.
+2. In Leve, go to **Gym → paste the key → Connect**. Your workouts sync and appear with charts.
+3. Press **Create these routines in Hevy** to add the two full-body routines (A and B) to your Hevy app.
+4. Optionally, turn on **Send each new weigh-in to Hevy**.
+
+The key is stored only on your Leve server and is never sent back to the browser.
+
+## 4. Supermarket prices: how they work
+
+| Store | Products | Prices |
+|---|---|---|
+| **Pingo Doce** | Mapped to real product pages (researched Sept 2026) | Pulled live from pingodoce.pt when you press **Refresh prices** |
+| **Auchan** | Mapped to real product pages | Pulled live from auchan.pt (Lisbon reference prices, postcode 2650 Amadora) |
+| **Mercadona** | No online shop in Portugal | [Open Prices](https://prices.openfoodfacts.org) crowd data + your receipt prices |
+
+- **Shop → Refresh Auchan & Pingo Doce prices** reads each mapped product page from *your* computer. Requests are spaced 2 seconds apart, cached for 12 h, and skipped when the store's `robots.txt` disallows them. Until then, prices are clearly marked **est.** (estimates from September 2026).
+- **Shop → product & price** lets you browse the store's category, pick a different product, or type the price on the shelf or receipt. Your prices always win.
+- **More → Find products** searches Pingo Doce, Auchan or Open Food Facts (which also covers Mercadona's Hacendado products), shows nutrition per 100 g and runs the gut check.
+- These are **unofficial** readers of public pages, for personal use. Store websites change, so if something stops working, run the diagnostic below. Please respect the stores' terms of use.
+
+Check every connection from your computer:
+
+```bash
+npm run check:connectors                      # stores, Open Food Facts, Open Prices
+HEVY_API_KEY=your-key npm run check:connectors # + Hevy
+```
+
+It prints ✓/✗ per connector and saves the raw store pages in `data/debug/`, so parsers can be fixed if a website changed.
+
+## 5. Settings (environment variables)
+
+| Variable | Default | Meaning |
+|---|---|---|
+| `PORT` | `3000` | Port to listen on |
+| `HOST` | `127.0.0.1` | `0.0.0.0` to allow other devices (needs `APP_PASSWORD`) |
+| `APP_PASSWORD` | – | Password for the whole app (HTTP basic auth) |
+| `DATA_DIR` | `./data` | Where `leve.json` and the cache live |
+| `ALLOW_NO_PASSWORD` | – | `1` to allow network access without a password (trusted networks only) |
+
+**Backups:** use **Settings → Download backup** (the Hevy key is left out), or copy `data/leve.json`.
+
+## 6. Docker (optional)
+
+```bash
+docker build -t leve .
+docker run -d -p 3000:3000 -e APP_PASSWORD=choose-something -v leve-data:/data --name leve leve
+```
+
+## 7. Development
+
+```bash
+npm test          # 74 unit + integration tests (node:test, no dependencies)
+npm run dev       # restart on file changes
+```
+
+```
+src/core/        shared logic, used by the server, the browser and the tests
+  nutrition.js   BMR/TDEE, targets, phases, meal budgets
+  weight.js      trend, weekly rate, adaptive maintenance, weekly check-in
+  foods.js       food catalogue: nutrition, gut notes, pack sizes, estimated prices
+  recipes.js     recipes with steps
+  planner.js     portion scaling and daily/weekly plans
+  shopping.js    shopping list, packs, costs per store
+  products.js    real Pingo Doce / Auchan products for each food
+  gut.js         label scanner, symptom scoring, trigger finder
+  training.js    Hevy workout stats, programme, routine payloads
+server/          zero-dependency HTTP server, JSON storage, API and connectors
+public/          the web app (vanilla JS modules, installable PWA)
+scripts/         connector diagnostic
+test/            tests
+```
+
+## Disclaimer
+
+Leve gives general nutrition and training guidance. It is not medical advice. With ongoing gut symptoms, see your doctor (GP / *médico de família*). Get a coeliac blood test **before** cutting out gluten. A dietitian (*nutricionista*) can guide a proper low-FODMAP trial. The Gut tab lists red-flag symptoms that need a doctor promptly.
