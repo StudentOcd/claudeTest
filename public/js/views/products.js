@@ -1,6 +1,6 @@
 import { app } from '../app.js';
 import { api } from '../api.js';
-import { html, fmt, toast, openModal, pageHead, storeChip, STORE_NAMES } from '../ui.js';
+import { html, fmt, toast, openModal, pageHead, shelfPrice, storeChip, STORE_NAMES } from '../ui.js';
 import { icon } from '../icons.js';
 import { looksLike } from '../match.js';
 import { foodTile, productFor, productTile } from '../photos.js';
@@ -60,7 +60,7 @@ async function showStoreProduct(store, url) {
     html`${productTile({ ...p, image: p.photo || p.image, store }, { size: 'xl' })}
       <div class="row between top mt">
         <div class="grow">${storeChip(store)}<h2 style="margin-top:6px">${p.name}</h2><div class="small muted">${p.brand || ''} ${p.ean ? `· EAN ${p.ean}` : ''}</div></div>
-        <div class="right"><div class="price" style="font-size:1.3rem">${fmt.eur(p.price)}</div>${p.unitPrice ? html`<div class="price-sub">${fmt.eur(p.unitPrice.eur)}/${p.unitPrice.per}</div>` : ''}</div>
+        <div class="right"><div class="price" style="font-size:1.3rem">${shelfPrice(p).price || '–'}</div><div class="price-sub">${shelfPrice(p).per}</div></div>
       </div>
       <div class="mt">${verdictBadge(p.gut)}${flagsList(p.gut)}</div>
       ${p.ingredientsText ? html`<p class="small"><b>Ingredients:</b> ${p.ingredientsText}</p>` : ''}
@@ -270,7 +270,7 @@ function renderResults() {
       ${productTile({ ...r, image: r.image }, {})}
       <div class="name">${r.name || '(no name)'}</div>
       <div class="price-sub" style="white-space:normal">${r.kind === 'store' ? STORE_NAMES[r.store] : r.brand || ''}${r.kind === 'off' && r.per100?.kcal != null ? ` · ${r.per100.kcal} kcal, ${r.per100.p ?? '?'} g P` : ''}</div>
-      <div class="row between" style="gap:4px"><span class="price" style="font-size:.95rem">${r.price ? fmt.eur(r.price) : ''}</span><span class="price-sub">${r.unitPrice ? `${fmt.eur(r.unitPrice.eur)}/${r.unitPrice.per}` : ''}</span></div>
+      <div class="row between" style="gap:4px"><span class="price" style="font-size:.95rem">${shelfPrice(r).price}</span><span class="price-sub">${shelfPrice(r).per}</span></div>
       ${r.gut ? verdictBadge(r.gut) : ''}
     </button>`,
   )}</div>`;

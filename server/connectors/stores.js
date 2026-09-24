@@ -106,7 +106,14 @@ const REMOVED = /auc-404error|class="[^"]*\bpage-not-found\b|produto n[aã]o (?:
 export async function fetchStoreProduct(http, store, url) {
   const site = siteFor(store);
   const safe = assertStoreUrl(store, url);
-  const html = await http.get(safe, { ...FETCH_OPTS, rateKey: `store-${store}` });
+  let html;
+  try {
+    html = await http.get(safe, { ...FETCH_OPTS, rateKey: `store-${store}` });
+  } catch (err) {
+    // Pingo Doce answers removed products with a real 404.
+    if (err.status === 404 || err.status === 410) throw new HttpError('This product is no longer in the online shop', { url: safe, code: 'NOT_FOUND', status: err.status });
+    throw err;
+  }
   const page = parseProductPage(html, safe);
   if (REMOVED.test(html) || (!page.price && !page.image && !page.per100)) {
     throw new HttpError('This product is no longer in the online shop', { url: safe, code: 'NOT_FOUND' });

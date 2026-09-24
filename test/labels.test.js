@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkLabel, labelNutrition } from '../src/core/labels.js';
+import { checkLabel, completeLabel, labelNutrition } from '../src/core/labels.js';
 import { FOOD_BY_ID, macrosFor, nutritionOf, nutritionSource, setNutritionOverrides } from '../src/core/foods.js';
 
 const chicken = FOOD_BY_ID.chicken_breast;
@@ -43,7 +43,43 @@ test('a bad label is ignored and the reference stays', () => {
     products: { 'auchan:9': { key: 'auchan:9', store: 'auchan', id: '9', url: 'https://www.auchan.pt/x/9.html', mapped: true, per100: { kcal: 900, p: 23, c: 0, f: 2 } } },
     foods: { chicken_breast: { auchan: ['auchan:9'] } },
   };
-  assert.deepEqual(labelNutrition({ catalog, stores: ['auchan'] }), {});
+  assert.equal(labelNutrition({ catalog, stores: ['auchan'] }).chicken_breast, undefined);
+});
+
+test('a row the store page leaves out is worked out from the label\'s own energy', () => {
+  // Real store pages: Pingo Doce leaves out rows that are 0, Auchan's turkey ham has no carbohydrate row.
+  const hake = { kcal: 71, f: 0.8, satFat: 0.3, p: 16, salt: 0.225 };
+  assert.deepEqual(completeLabel(hake), { per100: { ...hake, c: 0 }, derived: 'c' });
+  const eggWhite = { kcal: 46, c: 0.7, p: 11, salt: 0.48 };
+  assert.deepEqual(completeLabel(eggWhite), { per100: { ...eggWhite, f: 0 }, derived: 'f' });
+  const turkeyHam = { kcal: 79, f: 0.5, satFat: 0.2, sugars: 1.5, p: 15, salt: 1.3 };
+  assert.equal(completeLabel(turkeyHam).per100.c, 3.6); // (79 − 4×15 − 9×0.5) / 4
+  // Not when two rows are missing, or when the numbers can't add up
+  assert.equal(completeLabel({ kcal: 71, p: 16 }).derived, null);
+  assert.equal(completeLabel({ kcal: 40, p: 16, f: 0.8 }).derived, null);
+  assert.equal(completeLabel({ kcal: 20, p: 3, f: 0.5, sugars: 12 }).derived, null, 'fewer carbohydrates than sugars');
+  // Complete labels are left alone
+  assert.deepEqual(completeLabel({ kcal: 135, p: 13, c: 1, f: 9.3 }), { per100: { kcal: 135, p: 13, c: 1, f: 9.3 }, derived: null });
+
+  const url = 'https://www.pingodoce.pt/home/produtos/peixaria/peixe/pescada/medalhoes-de-pescada-congelados-pingo-doce-38364.html';
+  const catalog = {
+    products: { 'pingodoce:38364': { key: 'pingodoce:38364', store: 'pingodoce', url, name: 'Medalhões de Pescada Congelados', detail: true, per100: hake } },
+    foods: { hake: { pingodoce: ['pingodoce:38364'] } },
+  };
+  const labels = labelNutrition({ catalog, stores: ['pingodoce'] });
+  assert.equal(labels.hake.per100.kcal, 71);
+  assert.equal(labels.hake.per100.c, 0);
+  assert.equal(labels.hake.source.derived, 'c');
+});
+
+test('low-energy foods: a label far in % but close in kcal is still that food', () => {
+  // Unsweetened almond drinks sold here are 13–16 kcal; the CIQUAL almond drink is 36 kcal.
+  const almond = FOOD_BY_ID.almond_drink.per100;
+  assert.equal(checkLabel({ kcal: 13, p: 0.4, c: 0, f: 1.1 }, almond).ok, true);
+  // A per-serving value copied into Open Food Facts is still caught (rice cakes: 113 vs 381 kcal)
+  assert.equal(checkLabel({ kcal: 113, p: 2.6, c: 23.3, f: 0.9 }, FOOD_BY_ID.rice_cakes.per100).ok, false);
+  // Banana chips are not bananas
+  assert.equal(checkLabel({ kcal: 538, p: 1.8, c: 63, f: 30 }, FOOD_BY_ID.banana.per100).ok, false);
 });
 
 test("another product's label is never borrowed", () => {

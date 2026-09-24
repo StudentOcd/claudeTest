@@ -179,6 +179,18 @@ test('store product fetch is limited to the store domain', async () => {
   assert.deepEqual(p.unitPrice, { eur: 6.29, per: 'kg' });
 });
 
+test('a product page that answers 404 is a product the store no longer sells', async () => {
+  const fetch = fakeFetch([
+    [(u) => u.endsWith('/robots.txt'), () => ({ text: '' })],
+    [(u) => u.includes('-111.html'), () => ({ status: 404, text: '<!DOCTYPE html><html><head><title>Pingo Doce</title></head><body>…</body></html>' })],
+    [(u) => u.includes('-222.html'), () => ({ status: 503, text: '<!DOCTYPE html><html><body>Service Unavailable</body></html>' })],
+  ]);
+  const http = new HttpClient({ fetchImpl: fetch });
+  await assert.rejects(fetchStoreProduct(http, 'pingodoce', 'https://www.pingodoce.pt/home/produtos/mercearia/arroz/arroz-agulha-111.html'), (err) => err.code === 'NOT_FOUND');
+  // Other failures stay errors, without an HTML page in the message
+  await assert.rejects(fetchStoreProduct(http, 'pingodoce', 'https://www.pingodoce.pt/home/produtos/mercearia/arroz/arroz-agulha-222.html'), (err) => err.code !== 'NOT_FOUND' && err.message === 'www.pingodoce.pt answered 503');
+});
+
 test('http client caches and throttles', async () => {
   const fetch = fakeFetch([[() => true, () => ({ json: { ok: 1 } })]]);
   const http = new HttpClient({ fetchImpl: fetch, intervals: { k: 50 } });

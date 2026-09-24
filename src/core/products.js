@@ -249,6 +249,8 @@ export const STORE_PRODUCTS = {
         { sold: 'pack', packG: 450 }),
     ],
     pingodoce: [
+      p('463549', 'Pão de Forma Branco sem Côdea Pingo Doce', '/home/produtos/padaria-e-pastelaria/pao-embalado/pao-de-forma-e-embalado/pao-de-forma-branco-sem-codea-pingo-doce-463549.html',
+        { sold: 'pack' }),
       p('960274', 'Pão de Forma sem Glúten Pingo Doce', '/home/produtos/padaria-e-pastelaria/pao-embalado/pao-de-forma-e-embalado/pao-de-forma-sem-gluten-pingo-doce-960274.html',
         { sold: 'pack', note: 'Gluten-free (no wheat fructans).' }),
     ],
@@ -317,7 +319,7 @@ export const STORE_PRODUCTS = {
         { sold: 'pack', packG: 1000 }),
     ],
     pingodoce: [
-      p('323609', 'Espinafres em Folha Congelados', '/home/congelados/espinafres-em-folha-congelados/323609.html', { sold: 'pack' }),
+      p('323609', 'Espinafres em Folha Congelados', '/home/produtos/congelados/frutas-e-vegetais/vegetais-congelados/espinafres-em-folha-congelados-pingo-doce-323609.html', { sold: 'pack' }),
     ],
     avoid: [{ store: 'auchan', id: '2650403', name: 'Espinafres Auchan Salteados Com Alho 750g', reason: 'Contains garlic.' }],
   },

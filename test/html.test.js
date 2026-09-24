@@ -231,3 +231,60 @@ test('schema.org nutrition in JSON-LD', () => {
   const html = `<script type="application/ld+json">{"@type":"Product","name":"Atum","nutrition":{"@type":"NutritionInformation","calories":"104 kcal","proteinContent":"24 g","fatContent":"0,8 g","carbohydrateContent":"0 g","saltContent":"0,9 g"}}</script>`;
   assert.deepEqual(parseProductPage(html).per100, { kcal: 104, p: 24, f: 0.8, c: 0, salt: 0.9 });
 });
+
+// Price markup copied from the stores' product pages (September 2026).
+const PD_WEIGHED = `<h1 class="product-name">Bife do Lombo de Porco</h1><h1 class="product-unit-measure">0.5 Kg</h1>
+<div class="prices-add-to-cart-actions" data-min-qty="1.0"><div class="prices"><div class="price"><span class="price-container">
+<span class="sales">
+<span class="value" content="6.99"></span>
+6,99 &euro;/Kg
+</span></span></div></div>
+<div class="tile-conversion d-none" data-display-quantity="0.5"
+data-display-unit="Kg"><span><span class="js-conversion-unit">1</span>&nbsp;Un</span><span class="js-conversion-unit-measure">0,5 kg</span></div></div>`;
+const pdPack = (name, measure, price) => `<h1 class="product-name">${name}</h1><h1 class="product-unit-measure">${measure}</h1>
+<div class="prices"><span class="sales"><span class="value" content="${price}"></span>
+${price.replace('.', ',')} &euro;
+</span></div>`;
+const AU_WEIGHED = `<h1 class="product-name">BIFE DE PERU AUCHAN KG</h1><div class="auc-measures"><span class="auc-measures--avg-weight">
+Quant. M&iacute;nima = 500g
+(1 un)
+</span>
+<span class="auc-measures--price-per-unit">4.50 &euro;/un</span></div>
+<div class="prices"><span class="sales"><span class="value" content="8.99">8,99 &euro;</span><span class="auc-avgWeight">/Kg</span></span></div>`;
+const AU_PACK = `<h1 class="product-name">FIAMBRE DE PERU NOBRE FATIAS FINAS CUIDA-TE 110G</h1>
+<div class="auc-measures"><span class="auc-measures--price-per-unit">27.18 &euro;/Kg</span></div>
+<div class="prices"><span class="sales"><span class="value" content="2.99">2,99 &euro;</span></span></div>`;
+
+test('shelf prices: sold by weight or by the pack, as the store shows them', () => {
+  const pdWeighed = parseProductPage(PD_WEIGHED, 'https://www.pingodoce.pt/home/produtos/talho/porco/bife-do-lombo-de-porco-346730.html');
+  assert.equal(pdWeighed.price, 6.99);
+  assert.deepEqual(pdWeighed.unitPrice, { eur: 6.99, per: 'kg' });
+  assert.deepEqual(pdWeighed.pack, { perKg: true, pieceG: 500 });
+  const pdTray = parseProductPage(pdPack('Medalhões de Pescada Congelados', '0.4 Kg | 9,98 €/Kg', '3.99'));
+  assert.deepEqual([pdTray.unitPrice, pdTray.pack], [{ eur: 9.98, per: 'kg' }, { grams: 400 }]);
+  // Pingo Doce's "0.4 Un | 14,72 €/Un" is a 400 g pack (5,89 € = 0.4 × 14,72 €)
+  const pdMince = parseProductPage(pdPack('Carne Picada Novilho Angus', '0.4 Un | 14,72 €/Un', '5.89'));
+  assert.deepEqual([pdMince.unitPrice, pdMince.pack], [{ eur: 14.72, per: 'kg' }, { grams: 400 }]);
+  const pdEggs = parseProductPage(pdPack('Ovos de Solo Classe M', '12 Un | 0,25 €/Un', '2.99'));
+  assert.deepEqual([pdEggs.unitPrice, pdEggs.pack], [{ eur: 0.25, per: 'unit' }, { units: 12 }]);
+  const pdOil = parseProductPage(pdPack('Azeite Virgem Extra', '0.75 L | 13,32 €/L', '9.99'));
+  assert.deepEqual([pdOil.unitPrice, pdOil.pack], [{ eur: 13.32, per: 'l' }, { grams: 750 }]);
+  const auWeighed = parseProductPage(AU_WEIGHED);
+  assert.equal(auWeighed.price, 8.99);
+  assert.deepEqual(auWeighed.unitPrice, { eur: 8.99, per: 'kg' }, 'the price is per kg, not the 4,50 € piece');
+  assert.deepEqual(auWeighed.pack, { perKg: true, pieceG: 500 });
+  const auPack = parseProductPage(AU_PACK);
+  assert.deepEqual([auPack.price, auPack.unitPrice, auPack.pack], [2.99, { eur: 27.18, per: 'kg' }, { grams: 110 }]);
+  // The shopping list gets €/kg for weighed products and the pack for the rest
+  assert.equal(priceEntryFromProduct({ ...auWeighed, store: 'auchan' }).eur, 8.99);
+  assert.equal(priceEntryFromProduct({ ...auWeighed, store: 'auchan' }).sold, 'weight');
+  assert.deepEqual((({ sold, eur, packG }) => ({ sold, eur, packG }))(priceEntryFromProduct({ ...pdMince, store: 'pingodoce' })), { sold: 'pack', eur: 5.89, packG: 400 });
+});
+
+// Pingo Doce leaves rows that are 0 out of its table (medalhões de pescada: no carbohydrate row).
+test('a label with a row left out is read as it is', () => {
+  const html = `<div>Composição Nutricional</div><div>Valores médios por 100 g de produto (não preparado)</div><table>
+    <tr><td>Nutriente</td><td>Quantidade</td></tr><tr><td>Energia (kJ)</td><td>302.0</td></tr><tr><td>Energia (kcal)</td><td>71.0</td></tr>
+    <tr><td>Lípidos (g)</td><td>0.8</td></tr><tr><td>Saturados (g)</td><td>0.3</td></tr><tr><td>Proteínas (g)</td><td>16.0</td></tr><tr><td>Sal (g)</td><td>0.225</td></tr></table>`;
+  assert.deepEqual(parseProductPage(html).per100, { kcal: 71, f: 0.8, satFat: 0.3, p: 16, salt: 0.225 });
+});

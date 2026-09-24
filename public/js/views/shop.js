@@ -1,11 +1,11 @@
 import { app } from '../app.js';
 import { api } from '../api.js';
-import { html, fmt, toast, openModal, formData, modalBody, pageHead, storeChip, STORE_NAMES } from '../ui.js';
+import { html, fmt, toast, openModal, formData, modalBody, pageHead, shelfPrice, storeChip, STORE_NAMES } from '../ui.js';
 import { icon } from '../icons.js';
 import { looksLike } from '../match.js';
 import { crawlCard, foodTile, hasPhotos, productFor, productTile, productsOf } from '../photos.js';
 import { FOOD_BY_ID, formatCount, nutritionOf, nutritionSource, unitLabel, weighedAs } from '/core/foods.js';
-import { checkLabel, compareToReference } from '/core/labels.js';
+import { checkLabel, compareToReference, completeLabel } from '/core/labels.js';
 import { avoidListFor, categoryUrl, STORE_PRODUCTS } from '/core/products.js';
 import { addDays } from '/core/dates.js';
 
@@ -34,7 +34,11 @@ function buyLabel(it, prod) {
   return `${it.buyText.split(' × ')[0]} × ${size}`;
 }
 
-const unitPriceText = (p) => (p?.unitPrice?.eur ? `${fmt.eur(p.unitPrice.eur)}/${p.unitPrice.per}` : '');
+// Under a list line: the price per kg (or per item) of the product it uses.
+const unitPriceText = (p) => {
+  const s = shelfPrice(p);
+  return s.price.endsWith('/kg') ? s.price : s.per;
+};
 
 function itemRow(it, checked) {
   const prod = productFor(it.foodId, it.store);
@@ -96,7 +100,7 @@ function openProductModal(foodId, startStore) {
     const others = productsOf(foodId, store);
     const l = latest(store);
     const liveHere = live.store === store ? live.items : [];
-    const priceNow = current?.price || (l && l.productName === current?.name ? l.eur : null);
+    const shelf = shelfPrice(current);
     return html`
       <div class="seg full mb">${stores.map((s) => html`<button type="button" class="${s === store ? 'on' : ''}" data-action="store" data-store="${s}">${STORE_NAMES[s]}</button>`)}</div>
       ${current ? productTile(current, { size: 'xl', foodId }) : html`<div class="ph xl none tint-${f.section}">${icon('image-off')}</div>`}
@@ -105,8 +109,8 @@ function openProductModal(foodId, startStore) {
           <div class="grow"><div class="row" style="gap:6px">${storeChip(store)}${current?.chosen ? html`<span class="chip brand">${icon('check')} your pick</span>` : ''}</div>
             <h2 style="margin-top:6px">${current?.name || f.name}</h2>
             <div class="small muted">${f.name} · ${f.en}</div></div>
-          <div class="right">${priceNow ? html`<div class="price" style="font-size:1.3rem">${fmt.eur(priceNow)}</div>` : ''}
-            <div class="price-sub">${unitPriceText(current)}</div></div>
+          <div class="right">${shelf.price ? html`<div class="price" style="font-size:1.3rem">${shelf.price}</div>` : current?.detail ? html`<div class="price-sub">not sold online now</div>` : ''}
+            <div class="price-sub">${shelf.per}</div></div>
         </div>
         ${l ? html`<p class="tiny muted mt">List price: ${fmt.eur(l.eur)}${l.sold === 'weight' ? '/kg' : ''} · ${SOURCE_LABEL[l.source] || l.source}${l.date ? `, ${l.date}` : ''}</p>` : html`<p class="tiny muted mt">No price from ${STORE_NAMES[store]} yet: the list uses an estimate.</p>`}
         ${current?.url ? html`<a class="btn outline small mt" href="${current.url}" target="_blank" rel="noopener">${icon('external-link', 'sm')} Open on ${STORE_NAMES[store]}</a>` : ''}
@@ -144,7 +148,7 @@ function openProductModal(foodId, startStore) {
     return html`<button type="button" class="pcard ${on ? 'on' : ''}" data-action="use" data-kind="${kind}" data-index="${i}">
       ${productTile(p, { foodId })}
       <div class="name">${p.name}</div>
-      <div class="row between" style="gap:4px"><span class="price" style="font-size:.95rem">${p.price ? fmt.eur(p.price) : ''}</span><span class="price-sub">${unitPriceText(p)}</span></div>
+      <div class="row between" style="gap:4px"><span class="price" style="font-size:.95rem">${shelfPrice(p).price}</span><span class="price-sub">${shelfPrice(p).per}</span></div>
       ${p.promo ? html`<span class="chip warn" style="align-self:flex-start">promo</span>` : ''}
     </button>`;
   };
@@ -202,7 +206,7 @@ function openProductModal(foodId, startStore) {
 function nutritionSection(f, product) {
   const used = nutritionOf(f);
   const src = nutritionSource(f);
-  const label = product?.per100 || null;
+  const { per100: label = null, derived } = completeLabel(product?.per100 || null);
   const check = label ? checkLabel(label, f.per100) : null;
   const rows = compareToReference(label, f);
   const usedRow = (key) => Math.round((used[key] ?? 0) * 10) / 10;
@@ -217,10 +221,11 @@ function nutritionSection(f, product) {
       <tr><th></th><th class="right">Your plan</th><th class="right">This label</th><th class="right">CIQUAL</th></tr>
       ${rows.map((r) => html`<tr><td>${r.name}</td>
         <td class="right used">${usedRow(r.key)}${r.key === 'kcal' ? '' : ' g'}</td>
-        <td class="right">${r.label ?? '–'}${r.label !== null && r.diffPct !== null && Math.abs(r.diffPct) >= 10 ? html` <span class="diff" style="color:var(--warn)">${r.diffPct > 0 ? '+' : ''}${r.diffPct}%</span>` : ''}</td>
+        <td class="right">${r.label ?? '–'}${r.key === derived ? '*' : ''}${r.label !== null && r.diffPct !== null && Math.abs(r.diffPct) >= 10 ? html` <span class="diff" style="color:var(--warn)">${r.diffPct > 0 ? '+' : ''}${r.diffPct}%</span>` : ''}</td>
         <td class="right muted">${r.ref}</td></tr>`)}
     </table>
     <p class="tiny muted mt">${srcText}
+      ${derived ? html` *The store page leaves out the ${derived === 'c' ? 'carbohydrate' : 'fat'} row, so it is worked out from the label's own energy.` : ''}
       ${label && !check.ok ? html` This label isn't used: ${check.why}.` : ''}
       ${!label ? (product?.detail ? " This product's page has no nutrition table (fresh meat, fish and loose produce don't need one), so the reference applies." : ' No label read for this product yet: Update on the Shop tab reads it from the store page.') : ''}
       CIQUAL 2025 is the EU food composition table from ANSES; energy and carbohydrates are calculated as on EU labels.</p>

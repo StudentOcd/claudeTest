@@ -123,7 +123,9 @@ export class HttpClient {
     if (!res.ok) {
       let detail = '';
       try {
-        detail = (await res.text()).slice(0, 300);
+        // A short plain-text reason; an HTML error page says nothing useful here.
+        const body = await res.text();
+        if (!/^\s*</.test(body)) detail = body.replace(/\s+/g, ' ').trim().slice(0, 200);
       } catch {
         // ignore
       }

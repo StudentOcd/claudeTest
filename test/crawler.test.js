@@ -101,8 +101,40 @@ test('Mercadona matching uses Spanish names and exclusions', () => {
   assert.deepEqual(matchMercadona(ps, 'eggs').map((p) => p.id), ['2']);
 });
 
+test('Mercadona: only products from the food\'s own aisle (real names and categories)', () => {
+  const ps = [
+    ['Pimientos del piquillo rellenos de bacalao Hacendado ultracongelados', 'Congelados › Fruta y verdura'],
+    ['Migas de bacalao desaladas Hacendado', 'Marisco y pescado › Salazones y ahumados'],
+    ['Lomo de bacalao MareDeus ultracongelado', 'Marisco y pescado › Pescado congelado'],
+    ['Bacalao al punto de sal descongelado', 'Marisco y pescado › Pescado fresco'],
+    ['Placas para canelones El Pavo', 'Arroz, legumbres y pasta › Pasta y fideos'],
+    ['Filetes pechuga de pavo', 'Carne › Aves y pollo'],
+    ['Queso rulo con piña y almendra Liptana', 'Charcutería y quesos › Queso untable, fresco y especialidades'],
+    ['Piña en su jugo Hacendado rodajas', 'Conservas, caldos y cremas › Conservas de verdura y frutas'],
+    ['Piña', 'Fruta y verdura › Fruta'],
+    ['Bolsita puré fresa y plátano Hacendado +8 meses', 'Conservas, caldos y cremas › Conservas de verdura y frutas'],
+    ['Fresas', 'Fruta y verdura › Fruta'],
+    ['Judías verdes redondas Hacendado', 'Conservas, caldos y cremas › Conservas de verdura y frutas'],
+    ['Judía verde redonda Hacendado ultracongelada', 'Congelados › Fruta y verdura'],
+    ['Spaghetti al huevo Hacendado', 'Arroz, legumbres y pasta › Pasta y fideos'],
+    ['Spaghetti Hacendado', 'Arroz, legumbres y pasta › Pasta y fideos'],
+    ['Batata', 'Fruta y verdura › Verdura'],
+    ['Yogur natural Hacendado sin lactosa', 'Postres y yogures › Yogures naturales y sabores'],
+  ].map(([name, category], i) => ({ id: String(i), store: 'mercadona', name, category }));
+  const first = (foodId) => matchMercadona(ps, foodId)[0]?.name;
+  assert.equal(first('cod_desalted'), 'Bacalao al punto de sal descongelado');
+  assert.ok(!matchMercadona(ps, 'cod_desalted').some((p) => /piquillo|migas/i.test(p.name)));
+  assert.deepEqual(matchMercadona(ps, 'turkey_steaks').map((p) => p.name), ['Filetes pechuga de pavo']);
+  assert.deepEqual(matchMercadona(ps, 'pineapple').map((p) => p.name), ['Piña']);
+  assert.deepEqual(matchMercadona(ps, 'strawberries').map((p) => p.name), ['Fresas']);
+  assert.equal(first('green_beans'), 'Judía verde redonda Hacendado ultracongelada');
+  assert.deepEqual(matchMercadona(ps, 'pasta').map((p) => p.name), ['Spaghetti Hacendado']);
+  assert.equal(first('sweet_potato'), 'Batata');
+  assert.equal(first('lf_yogurt'), 'Yogur natural Hacendado sin lactosa');
+});
+
 test('store products are filed under the right food only', async () => {
-  const { matchesFood, PT_QUERIES } = await import('../src/core/match.js');
+  const { aisleFit, matchesFood, PT_QUERIES } = await import('../src/core/match.js');
   const { FOOD_BY_ID } = await import('../src/core/foods.js');
   const { STORE_PRODUCTS } = await import('../src/core/products.js');
   const f = (id) => FOOD_BY_ID[id];
@@ -127,10 +159,24 @@ test('store products are filed under the right food only', async () => {
   assert.equal(matchesFood('Tomate Pingo Doce', f('tomato')), true);
   assert.equal(matchesFood('Pepino Doce', f('cucumber')), false);
   assert.equal(matchesFood('Fécula de Batata', f('potatoes')), false);
-  // Every researched product matches its own food and no other.
+  // The store's aisle decides when the name alone can't (real names and addresses)
+  const AU = 'https://www.auchan.pt/pt';
+  const PD = 'https://www.pingodoce.pt/home/produtos';
+  assert.equal(matchesFood('ICED TEA AUCHAN LIMÃO 2L', f('lemon'), { url: `${AU}/bebidas-e-garrafeira/refrigerantes/ice-tea-e-tisanas/iced-tea-auchan-limao-2l/3314.html` }), false);
+  assert.equal(matchesFood('LIMÃO KG', f('lemon'), { url: `${AU}/produtos-frescos/fruta/laranjas-clementinas-e-limoes/limao-kg/21998.html` }), true);
+  assert.equal(matchesFood('Pastilhas Loiça All in One Limão', f('lemon'), { url: `${PD}/as-nossas-marcas/pingo-doce/pastilhas-loica-all-in-one-limao-pingo-doce-1.html` }), false, 'fresh fruit needs its own aisle');
+  assert.equal(matchesFood('Infusão Ananás H20', f('pineapple'), { url: `${PD}/alternativas-alimentares/nutricao-desportiva/bebidas-iogurtes-e-pudins-proteicos/infusao-ananas-h20-1.html` }), false);
+  assert.equal(matchesFood('Ananás dos Açores', f('pineapple'), { url: `${PD}/frutas-e-vegetais/frutas/fruta-da-epoca/ananas-dos-acores-2.html` }), true);
+  assert.equal(matchesFood('BANANA RODELAS AUCHAN 200 G', f('banana'), { url: `${AU}/produtos-frescos/fruta/frutos-secos-e-sementes/banana-rodelas-auchan-200-g/3.html` }), false);
+  assert.equal(matchesFood('Ervilhas e Cenouras Congeladas', f('carrots'), { url: `${PD}/congelados/frutas-e-vegetais/vegetais-congelados/ervilhas-e-cenouras-congeladas-4.html` }), false);
+  assert.equal(matchesFood('O Hospital de Alfaces', f('lettuce'), { url: `${PD}/livraria-e-papelaria/livraria/literatura/o-hospital-de-alfaces-5.html` }), false);
+  assert.equal(matchesFood('Lombo de Porco Duroc Fatiado', f('pork_loin'), { url: `${PD}/charcutaria-e-queijos/charcutaria/outros-enchidos-e-fumeiro%E2%80%8B/lombo-de-porco-duroc-fatiado-6.html` }), false, 'cured, from the deli');
+  assert.equal(matchesFood('Ovos de Solo Classe M', f('eggs'), { url: `${PD}/as-nossas-marcas/pingo-doce/ovos-de-solo-classe-m-pingo-doce-7.html` }), true, 'own-brand shelf: the name decides');
+  assert.equal(aisleFit('green_beans', { url: `${PD}/congelados/frutas-e-vegetais/vegetais-congelados/feijao-verde-cortado-8.html` }), 1, 'frozen green beans preferred');
+  // Every researched product matches its own food (name and aisle) and no other.
   for (const [foodId, byStore] of Object.entries(STORE_PRODUCTS)) {
     for (const p of [...(byStore.auchan || []), ...(byStore.pingodoce || [])]) {
-      assert.ok(matchesFood(p.name, f(foodId)), `${p.name} should match ${foodId}`);
+      assert.ok(matchesFood(p.name, f(foodId), p), `${p.name} should match ${foodId}`);
       for (const other of Object.keys(PT_QUERIES)) if (other !== foodId) assert.ok(!matchesFood(p.name, f(other)), `${p.name} should not match ${other}`);
     }
   }

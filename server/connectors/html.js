@@ -340,6 +340,46 @@ function ownProductImage(html, url) {
   return null;
 }
 
+// How the shelf price is meant, from the markup both shops use (Salesforce Commerce Cloud).
+// Weighed products: Pingo Doce writes the price per kg ("6,99 €/Kg") and the usual piece
+// ("1 Un = 0,5 kg"); Auchan puts "/Kg" after the price and states the usual piece
+// ("Quant. Mínima = 500g (1 un)", "4.50 €/un"). Packs: Pingo Doce gives the pack and its price
+// per kg, litre or unit ("0.4 Kg | 9,98 €/Kg", "12 Un | 0,25 €/Un"); a fractional "Un" there is
+// a kg ("0.4 Un | 14,72 €/Un" is a 400 g pack at 14,72 €/kg).
+// Returns { unitPrice, pack } to use instead of the generic reads, or null.
+export function shelfMeasures(html, price) {
+  const src = String(html ?? '');
+  const num = (t) => Number(String(t).replace(',', '.'));
+  const piece = (() => {
+    const pd = src.match(/data-display-quantity=["']([\d.,]+)["']\s+data-display-unit=["']kg["']/i);
+    if (pd) return Math.round(num(pd[1]) * 1000);
+    const au = clean(src.match(/class=["'][^"']*auc-measures--avg-weight[^"']*["'][^>]*>([\s\S]*?)<\/span>/i)?.[1] || '');
+    const m = au.match(/=\s*(\d+(?:[.,]\d+)?)\s*(kg|g)\b/i);
+    return m ? Math.round(num(m[1]) * (m[2].toLowerCase() === 'kg' ? 1000 : 1)) : null;
+  })();
+  const pdSales = clean(src.match(/class=["'][^"']*\bsales\b[^"']*["'][^>]*>\s*<span[^>]*class=["'][^"']*\bvalue\b[^"']*["'][^>]*>\s*<\/span>([^<]*)</i)?.[1] || '');
+  const auPerKg = /class=["'][^"']*auc-avgWeight[^"']*["'][^>]*>\s*\/\s*kg\s*</i.test(src);
+  if (price > 0 && (auPerKg || /€\s*\/\s*kg\b/i.test(pdSales))) {
+    return { unitPrice: { eur: price, per: 'kg' }, pack: { perKg: true, ...(piece ? { pieceG: piece } : {}) } };
+  }
+  const measure = clean(src.match(/class=["'][^"']*product-unit-measure[^"']*["'][^>]*>([^<]*)</i)?.[1] || '');
+  const m = measure.match(/^(\d+(?:[.,]\d+)?)\s*(un|kg|l)\s*\|\s*(\d+(?:[.,]\d+)?)\s*€\s*\/\s*(un|kg|l)\b/i);
+  if (!m) return null;
+  const qty = num(m[1]);
+  const eur = num(m[3]);
+  let unit = m[2].toLowerCase();
+  let per = m[4].toLowerCase();
+  if (unit === 'un' && per === 'un' && !Number.isInteger(qty) && price > 0 && Math.abs(price - qty * eur) <= 0.03 * price + 0.02) {
+    unit = 'kg';
+    per = 'kg';
+  }
+  if (!(qty > 0) || !(eur > 0)) return null;
+  return {
+    unitPrice: { eur, per: per === 'un' ? 'unit' : per },
+    pack: unit === 'un' ? { units: qty } : { grams: Math.round(qty * 1000) },
+  };
+}
+
 // The fuller of two nutrition reads, with gaps filled from the other.
 function pickNutrition(a, b) {
   if (!a) return b;
@@ -356,11 +396,12 @@ export function parseProductPage(html, url = '') {
   const h1 = src.match(/<h1[^>]*>([\s\S]*?)<\/h1>/i);
   const name = ld?.name || metaContent(src, 'og:title') || (h1 ? clean(h1[1]) : null);
   let price = ld?.price ?? parseEuro(metaContent(src, 'product:price:amount')) ?? sfccPrice(src);
-  const unitPrice = parseUnitPrice(text);
   if (price === null) {
     const m = text.match(/(\d+,\d{2})\s*€(?!\s*\/)/);
     if (m) price = parseEuro(m[1]);
   }
+  const shelf = shelfMeasures(src, price);
+  const unitPrice = shelf?.unitPrice || parseUnitPrice(text);
   const eanText = text.match(/\b(?:EAN(?:-?13)?|GTIN|C[oó]digo(?: de barras| EAN)?)\s*:?\s*(\d{8,14})\b/i);
   return {
     url,
@@ -373,7 +414,7 @@ export function parseProductPage(html, url = '') {
     unitPrice,
     available: ld?.available ?? null,
     image: absolute(ld?.image || metaContent(src, 'og:image') || ownProductImage(src, url), url),
-    pack: parsePackSize(name || ''),
+    pack: { ...parsePackSize(name || ''), ...(shelf?.pack || {}) },
     per100: pickNutrition(ldNutrition(ldObjs), parseNutrition(text)),
     ingredientsText: extractIngredients(text),
   };

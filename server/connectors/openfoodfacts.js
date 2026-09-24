@@ -11,6 +11,8 @@ const FIELDS = [
 ].join(',');
 
 const num = (x) => (x === undefined || x === null || x === '' || Number.isNaN(Number(x)) ? null : Number(x));
+// Rounded as on a label (OFF works some values out from a serving: 228.571428571429 kcal).
+const round = (x, d) => (x === null ? null : Math.round(x * 10 ** d) / 10 ** d);
 
 // Maps an OFF product to the app's shape (nutrition per 100 g).
 export function normalizeOffProduct(p) {
@@ -26,14 +28,14 @@ export function normalizeOffProduct(p) {
     quantity: p.quantity || '',
     stores: p.stores_tags || [],
     per100: {
-      kcal,
-      p: num(n.proteins_100g),
-      f: num(n.fat_100g),
-      satFat: num(n['saturated-fat_100g']),
-      c: num(n.carbohydrates_100g),
-      sugars: num(n.sugars_100g),
-      fib: num(n.fiber_100g),
-      salt: num(n.salt_100g),
+      kcal: round(kcal, 0),
+      p: round(num(n.proteins_100g), 1),
+      f: round(num(n.fat_100g), 1),
+      satFat: round(num(n['saturated-fat_100g']), 1),
+      c: round(num(n.carbohydrates_100g), 1),
+      sugars: round(num(n.sugars_100g), 1),
+      fib: round(num(n.fiber_100g), 1),
+      salt: round(num(n.salt_100g), 2),
     },
     ingredientsText: p.ingredients_text_pt || p.ingredients_text || '',
     additivesTags: p.additives_tags || [],

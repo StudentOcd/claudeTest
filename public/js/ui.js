@@ -71,6 +71,26 @@ export const fmt = {
 };
 
 // Open/closed state of <details data-remember="key"> across re-renders.
+// A product's shelf price the way the store shows it: weighed products per kg (with the
+// usual piece or tray), packs by the pack (with the price per kg, litre or item).
+// Returns { price: '€6.49/kg' | '€5.89', per: '€14.72/kg' | '€0.25 each' | '≈500 g each' }.
+const PER = { kg: 'kg', l: 'L', unit: 'each', dozen: 'dozen', dc: 'dozen', dz: 'dozen' };
+export function shelfPrice(p) {
+  if (!p) return { price: '', per: '' };
+  const weighed = p.pack?.perKg || (p.unitPrice?.per === 'kg' && !p.pack?.grams && !p.pack?.units && p.unitPrice.eur === p.price);
+  if (weighed) {
+    const perKg = p.unitPrice?.per === 'kg' ? p.unitPrice.eur : p.price;
+    const g = p.pack?.pieceG;
+    return {
+      price: perKg > 0 ? `${fmt.eur(perKg)}/kg` : '',
+      per: g ? `≈${g >= 1000 ? `${g / 1000} kg` : `${g} g`} each${perKg > 0 ? `, ≈${fmt.eur((perKg * g) / 1000)}` : ''}` : 'sold by weight',
+    };
+  }
+  const u = p.unitPrice;
+  const per = u?.eur > 0 ? (PER[u.per] === 'each' ? `${fmt.eur(u.eur)} each` : `${fmt.eur(u.eur)}/${PER[u.per] || u.per}`) : '';
+  return { price: p.price > 0 ? fmt.eur(p.price) : '', per };
+}
+
 export const remembered = {};
 
 export function openAttr(key, fallback) {

@@ -10,19 +10,21 @@ import { existsSync } from 'node:fs';
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { FOOD_BY_ID } from '../src/core/foods.js';
-import { keywordScore, matchesFood, PT_QUERIES } from '../src/core/match.js';
+import { aisleFit, keywordScore, matchesFood, PT_QUERIES } from '../src/core/match.js';
+import { normalizeText } from '../src/core/gut.js';
 import { STORE_PRODUCTS, categoryUrl, productsFor } from '../src/core/products.js';
 import { browseCategory, fetchStoreProduct, photoUrl, priceEntryFromProduct, sitemapProducts } from './connectors/stores.js';
 import { matchMercadona, mercadonaProduct, mercadonaProducts } from './connectors/mercadona.js';
 import { offProduct } from './connectors/openfoodfacts.js';
-import { isCompleteLabel } from '../src/core/labels.js';
+import { completeLabel, isCompleteLabel } from '../src/core/labels.js';
 
 /**
- * The nutrition label of this exact product: from the store's page, else from Open Food Facts
- * by barcode (label values transcribed from photos of the pack).
+ * The nutrition label of this exact product: from the store's page (also when the page leaves
+ * out a row its energy gives, see completeLabel), else from Open Food Facts by barcode (label
+ * values transcribed from photos of the pack). The label is kept as read.
  */
 export async function labelFor(http, { per100 = null, ean = null } = {}, { useOff = true } = {}) {
-  if (isCompleteLabel(per100)) return { per100, labelFrom: 'store' };
+  if (isCompleteLabel(completeLabel(per100).per100)) return { per100, labelFrom: 'store' };
   // Barcodes starting with 2 are the store's own codes for weighed items: never in Open Food Facts.
   if (useOff && /^\d{8,14}$/.test(String(ean || '')) && !/^2/.test(String(ean).padStart(13, '0'))) {
     const off = await offProduct(http, ean);
@@ -102,18 +104,31 @@ function soldFor(candidate, page) {
   return {};
 }
 
-// The store's own brands first (usually the cheapest), then the closest name, photos preferred.
+// Only products on the food's aisle, the store's own brands first (usually the cheapest),
+// then the closest name, photos preferred.
 const OWN_BRAND = {
-  pingodoce: /\b(pingo doce|nosso talho|nossa peixaria|nossos frescos|nossa fruta|go active|pura vida)\b/i,
-  auchan: /\b(auchan|cultivamos o bom|cuida-te|polegar)\b/i,
+  pingodoce: /\b(pingo doce|nosso talho|nossa peixaria|nossos frescos|nossa fruta|nossa padaria|go active|pura vida)\b/,
+  auchan: /\b(auchan|cultivamos o bom|cuida te|polegar)\b/,
 };
+// Brand from the name or the end of the page address (Pingo Doce names leave it out:
+// ".../pao-de-forma-branco-sem-codea-pingo-doce-463549.html"; never the host: auchan.pt).
+const slug = (url) => {
+  try {
+    return new URL(url).pathname.split('/').filter(Boolean).slice(-2).join(' ');
+  } catch {
+    return '';
+  }
+};
+const ownBrand = (store, name, brand, url) => Boolean(OWN_BRAND[store]?.test(normalizeText([name, brand, slug(url)].filter(Boolean).join(' '))));
+// Organic costs more: an alternative, not the default.
+const ORGANIC = /\b(bio|biol[oó]gic[oa]s?)\b/i;
 export function rankForFood(products, food, store) {
   const q = PT_QUERIES[food.id];
   if (!q) return [];
   return products
-    .map((p) => ({ p, s: keywordScore(p.name, q) }))
-    .filter((x) => x.s > 0)
-    .map((x) => ({ ...x, s: x.s + (OWN_BRAND[store]?.test(x.p.name) ? 1.5 : 0) + (x.p.image ? 0.5 : 0) }))
+    .map((p) => ({ p, s: keywordScore(p.name, q), fit: aisleFit(food.id, p) }))
+    .filter((x) => x.s > 0 && x.fit >= 0)
+    .map((x) => ({ ...x, s: x.s + x.fit * 2 + (ownBrand(store, x.p.name, null, x.p.url) ? 1.5 : 0) + (ORGANIC.test(x.p.name) ? -1 : 0) + (x.p.image ? 0.5 : 0) }))
     .sort((a, b) => b.s - a.s || a.p.name.length - b.p.name.length)
     .map((x) => x.p);
 }
@@ -300,10 +315,15 @@ export async function crawlStores(http, {
       const settle = () => {
         // The product the list uses: your pick, else the best match on sale (store brands first).
         const q = PT_QUERIES[food.id];
-        const score = ({ page, candidate }) => (candidate === known[0] && choice?.url ? 1000 : 0)
-          + (q ? keywordScore(page.name || '', q) : 0)
-          + (OWN_BRAND[store]?.test(page.name || '') ? 1.5 : 0)
-          + (page.price > 0 ? 0.5 : -5);
+        const score = ({ page, candidate }) => {
+          const fit = aisleFit(food.id, { url: page.url || candidate.url });
+          return (candidate === known[0] && choice?.url ? 1000 : 0)
+            + (q ? keywordScore(page.name || '', q) : 0)
+            + (fit < 0 ? -100 : fit * 2)
+            + (ownBrand(store, page.name, page.brand, page.url) ? 1.5 : 0)
+            + (ORGANIC.test(page.name || '') ? -1 : 0)
+            + (page.price > 0 ? 0.5 : -5);
+        };
         const best = [...alive].sort((a, b) => score(b) - score(a))[0];
         if (!best) return;
         addPrice(foodId, priceEntryFromProduct(best.page, soldFor(best.candidate, best.page)));
