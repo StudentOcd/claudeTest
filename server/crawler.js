@@ -170,7 +170,11 @@ export function catalogPrices(catalog) {
       let entry;
       if (store === 'mercadona') {
         const byKg = p.unitPrice?.per === 'kg' && !p.pack?.grams;
-        entry = { store, sold: byKg ? 'weight' : 'pack', eur: byKg ? p.unitPrice.eur : p.price, packG: p.pack?.grams || undefined, source: 'mercadona-es', productName: p.name, url: p.url };
+        entry = {
+          store, sold: byKg ? 'weight' : 'pack', eur: byKg ? p.unitPrice.eur : p.price,
+          packG: p.pack?.drainedG || p.pack?.grams || undefined, packUnits: p.pack?.units || undefined,
+          source: 'mercadona-es', productName: p.name, url: p.url,
+        };
       } else {
         const researched = productsFor(foodId, store).find((r) => r.url === p.url) || {};
         entry = priceEntryFromProduct({ ...p, store }, soldFor(researched, p));
@@ -401,7 +405,8 @@ export async function crawlStores(http, {
               store: 'mercadona',
               sold: p.unitPrice?.per === 'kg' && !p.pack?.grams ? 'weight' : 'pack',
               eur: p.unitPrice?.per === 'kg' && !p.pack?.grams ? p.unitPrice.eur : p.price,
-              packG: p.pack?.grams || undefined,
+              packG: p.pack?.drainedG || p.pack?.grams || undefined,
+              packUnits: p.pack?.units || undefined,
               date: new Date().toISOString().slice(0, 10),
               source: 'mercadona-es',
               productName: p.name,

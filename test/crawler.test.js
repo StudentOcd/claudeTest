@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { HttpClient } from '../server/connectors/http.js';
 import { catalogPrices, crawlStores, emptyCatalog, saveCatalog, loadCatalog } from '../server/crawler.js';
-import { matchMercadona } from '../server/connectors/mercadona.js';
+import { matchMercadona, toProduct } from '../server/connectors/mercadona.js';
 
 // 1x1 JPEG and PNG
 const JPEG = Buffer.from('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAgGBgcGBQgHBwcJCQgKDBQNDAsLDBkSEw8UHRofHh0aHBwgJC4nICIsIxwcKDcpLDAxNDQ0Hyc5PTgyPC4zNDL/wAALCAABAAEBAREA/8QAFAABAAAAAAAAAAAAAAAAAAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AKp//2Q==', 'base64');
@@ -99,6 +99,16 @@ test('Mercadona matching uses Spanish names and exclusions', () => {
   ].map((p, i) => ({ ...p, id: String(i), store: 'mercadona' }));
   assert.deepEqual(matchMercadona(ps, 'tuna_water').map((p) => p.id), ['0']);
   assert.deepEqual(matchMercadona(ps, 'eggs').map((p) => p.id), ['2']);
+});
+
+test('Mercadona pack sizes: a dozen eggs, drained weight of tins, pieces by weight', () => {
+  // price_instructions as tienda.mercadona.es returns them
+  const eggs = toProduct({ id: 1, display_name: 'Huevos medianos M', price_instructions: { unit_size: 12, size_format: 'ud', unit_price: '2.85', reference_price: '2.850', reference_format: 'dc' } });
+  assert.deepEqual([eggs.price, eggs.pack, eggs.unitPrice], [2.85, { units: 12 }, { eur: 2.85, per: 'dc' }]);
+  const tuna = toProduct({ id: 2, display_name: 'Atún claro al natural Hacendado', price_instructions: { unit_size: 0.24, size_format: 'kg', drained_weight: 0.168, unit_price: '2.10', reference_price: '12.500', reference_format: 'kg' } });
+  assert.deepEqual(tuna.pack, { grams: 240, drainedG: 168 });
+  const potato = toProduct({ id: 3, display_name: 'Patata', price_instructions: { unit_size: 0.25, size_format: 'kg', approx_size: true, unit_price: '0.48', reference_price: '1.900', reference_format: 'kg' } });
+  assert.deepEqual([potato.price, potato.pack, potato.unitPrice], [0.48, { grams: 250 }, { eur: 1.9, per: 'kg' }]);
 });
 
 test('Mercadona: only products from the food\'s own aisle (real names and categories)', () => {

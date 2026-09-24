@@ -56,7 +56,17 @@ export const MERCADONA_QUERIES = {
 // peanut butter would be under "Aperitivos" or with the jams).
 const SKIP_GROUPS = /limpieza|hogar|mascota|cuidado|maquillaje|fitoterapia|parafarmacia|beb[eé]|higiene|cabello|facial|corporal|perfume|papel|bodega|refresco|agua|cerveza|vino|zumo|cacao|caf[eé]|pizza/i;
 
-function toProduct(p) {
+// Pack size: kg or litres, a count ("12 ud" of eggs), and the drained weight of tins.
+function packOf(pi) {
+  const size = Number(pi.unit_size);
+  if (!(size > 0)) return {};
+  if (pi.size_format === 'ud') return { units: size };
+  if (pi.size_format !== 'kg' && pi.size_format !== 'l') return {};
+  const drained = Number(pi.drained_weight);
+  return { grams: Math.round(size * 1000), ...(drained > 0 ? { drainedG: Math.round(drained * 1000) } : {}) };
+}
+
+export function toProduct(p) {
   const pi = p.price_instructions || {};
   const unit = Number(pi.unit_price);
   const ref = Number(pi.reference_price ?? pi.bulk_price);
@@ -70,7 +80,7 @@ function toProduct(p) {
     price: Number.isFinite(unit) ? unit : null,
     unitPrice: Number.isFinite(ref) && pi.reference_format ? { eur: ref, per: String(pi.reference_format).toLowerCase() === 'kg' ? 'kg' : String(pi.reference_format).toLowerCase() } : null,
     packaging: [p.packaging, pi.unit_size ? `${pi.unit_size} ${pi.size_format || ''}` : ''].filter(Boolean).join(' · '),
-    pack: pi.unit_size && pi.size_format === 'kg' ? { grams: Number(pi.unit_size) * 1000 } : pi.unit_size && pi.size_format === 'l' ? { grams: Number(pi.unit_size) * 1000 } : {},
+    pack: packOf(pi),
     priceCountry: 'ES',
   };
 }
