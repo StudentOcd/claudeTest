@@ -34,6 +34,7 @@ export function keywordScore(productName, { all = [], some = [], any = [], none 
 // banana chips, a book called "O Hospital de Alfaces".
 const MEAT = ['talho', 'carne/'];
 const FISH = ['peixaria', 'peixe', 'pescado'];
+const NOT_FRESH_FISH = ['conservas', 'salazones', 'ahumados', 'fumado'];
 // '^' anchors a fragment to the start of the aisle ('congelados/frutas e vegetais/vegetais
 // congelados' is not the fresh vegetable aisle).
 const FRUIT = ['^frutas e vegetais/frutas', '^produtos frescos/fruta/', 'produtos frescos/frutas e legumes', '^fruta y verdura/fruta'];
@@ -49,9 +50,9 @@ export const AISLES = {
   turkey_steaks: { in: MEAT },
   pork_loin: { in: MEAT },
   beef_mince_lean: { in: MEAT },
-  hake: { in: FISH },
-  cod_desalted: { in: FISH },
-  salmon: { in: FISH },
+  hake: { in: FISH, out: NOT_FRESH_FISH },
+  cod_desalted: { in: FISH, out: ['conservas', 'ahumados', 'fumado'] },
+  salmon: { in: FISH, out: NOT_FRESH_FISH },
   tuna_water: { in: ['conservas'] },
   eggs: { in: ['ovo', 'huevo'] },
   egg_whites: { in: ['ovo', 'huevo', 'nutricao desportiva', 'preparado para bolos'] },
@@ -64,7 +65,7 @@ export const AISLES = {
   bread: { in: ['pao embalado', 'pao de forma', 'pan de molde'] },
   rice_cakes: { in: ['tortitas', 'bolachas', 'galletas', 'galetes'] },
   olive_oil: { in: ['azeite', 'aceite'] },
-  peanut_butter: { in: ['barrar', 'mermelada', 'frutos secos'] },
+  peanut_butter: { in: ['barrar', 'mermelada', 'frutos secos', 'azucar caramelos y chocolate'] }, // Mercadona shelves it with chocolate
   carrots: fresh(VEG),
   courgette: fresh(VEG),
   green_beans: fresh([...FROZEN_VEG, ...VEG], { prefer: FROZEN_VEG }),
@@ -166,20 +167,20 @@ export const PT_QUERIES = {
   spinach: { all: ['espinafre'], none: ['creme', 'esparregado', 'lasanha', 'queijo', 'sopa', 'mistura', 'bebe', 'sumo', 'baby', 'massa', 'fingers', 'crepes', 'folhado', 'ravioli', 'salmao', 'natas'] },
   broccoli: { all: ['brocolo'], none: ['creme', 'sopa', 'mistura', 'salteado', 'veggie', 'couve', 'arroz'] },
   red_pepper: { all: ['pimento'], some: ['vermelho'], none: ['assado', 'asssado', 'conserva', 'padron', 'piquillo', 'recheado', 'tiras', 'inteiros', 'frasco', 'lata'] },
-  tomato: { all: ['tomate'], none: ['polpa', 'pelado', 'concentrado', 'ketchup', 'molho', 'cherry', 'seco', 'sumo', 'triturado', 'frito', 'passata', 'salada', 'sopa', 'doce de', 'gaspacho', 'pure', 'semente', 'creme', 'pedacos', 'cubos', 'mini', 'cereja'] },
+  tomato: { all: ['tomate'], none: ['polpa', 'pelado', 'concentrado', 'ketchup', 'molho', 'cherry', 'seco', 'sumo', 'triturado', 'frito', 'passata', 'salada', 'sopa', 'doce de', 'gaspacho', 'pure', 'semente', 'creme', 'pedacos', 'cubos', 'mini', 'cereja'], avoid: ['santa rita', 'rosa', 'coracao', 'kumato'] },
   cucumber: { all: ['pepino'], none: ['pickle', 'conserva', 'vinagre', 'pepino doce', 'gaspacho', 'pepininho', 'salada', 'mini'] },
   lettuce: { all: ['alface'], none: ['mistura', 'salada', 'cenoura'] },
   passata: { some: ['polpa de tomate', 'tomate triturado', 'passata'], none: ['cebola', 'alho', 'manjericao', 'molho', 'oregaos'] },
   lemon: { all: ['limao'], none: ['pudim', 'gelado', 'sorbet', 'iogurte', 'kefir', 'doce de', 'compota', 'marmelada', 'geleia', 'bolo', 'torta', 'tarte', 'mousse', 'gomas', 'gelatina', 'sumo', 'nectar', 'batido', 'bebida', 'licor', 'aroma', 'sabor', 'cereais', 'barra', 'chocolate', 'ice tea', 'refrigerante', 'agua', 'cha', 'bolach', 'raspas', 'gin', 'cerveja', 'sabonete', 'detergente', 'caviar'] },
   banana: { all: ['banana'], none: ['pudim', 'gelado', 'sorbet', 'iogurte', 'kefir', 'doce de', 'compota', 'marmelada', 'geleia', 'bolo', 'torta', 'tarte', 'mousse', 'gomas', 'gelatina', 'sumo', 'nectar', 'batido', 'bebida', 'licor', 'aroma', 'sabor', 'cereais', 'barra', 'chocolate', 'chips', 'seca', 'desidratad', 'pao', 'papa', 'assar', 'pure', 'rodelas', 'panquecas', 'fritar'] },
-  orange: { all: ['laranja'], none: ['pudim', 'gelado', 'sorbet', 'iogurte', 'kefir', 'doce de', 'compota', 'marmelada', 'geleia', 'bolo', 'torta', 'tarte', 'mousse', 'gomas', 'gelatina', 'sumo', 'nectar', 'batido', 'bebida', 'licor', 'aroma', 'sabor', 'cereais', 'barra', 'chocolate', 'refrigerante', 'bolach', 'agua', 'cha', 'chupa'] },
+  orange: { all: ['laranja'], none: ['pedacos', 'kiwi', 'morango', 'melao', 'polpa', 'pudim', 'gelado', 'sorbet', 'iogurte', 'kefir', 'doce de', 'compota', 'marmelada', 'geleia', 'bolo', 'torta', 'tarte', 'mousse', 'gomas', 'gelatina', 'sumo', 'nectar', 'batido', 'bebida', 'licor', 'aroma', 'sabor', 'cereais', 'barra', 'chocolate', 'refrigerante', 'bolach', 'agua', 'cha', 'chupa'] },
   kiwi: { all: ['kiwi'], none: ['manga', 'papaia', 'pedacos', 'pudim', 'gelado', 'sorbet', 'iogurte', 'kefir', 'doce de', 'compota', 'marmelada', 'geleia', 'bolo', 'torta', 'tarte', 'mousse', 'gomas', 'gelatina', 'sumo', 'nectar', 'batido', 'bebida', 'licor', 'aroma', 'sabor', 'cereais', 'barra', 'chocolate'] },
   tangerine: { some: ['tangerina', 'clementina', 'mandarina'], none: ['pudim', 'gelado', 'sorbet', 'iogurte', 'kefir', 'doce de', 'compota', 'marmelada', 'geleia', 'bolo', 'torta', 'tarte', 'mousse', 'gomas', 'gelatina', 'sumo', 'nectar', 'batido', 'bebida', 'licor', 'aroma', 'sabor', 'cereais', 'barra', 'chocolate', 'conserva'] },
   strawberries: { all: ['morango'], none: ['pedacos', 'cortado', 'pudim', 'gelado', 'sorbet', 'iogurte', 'kefir', 'doce de', 'compota', 'marmelada', 'geleia', 'bolo', 'torta', 'tarte', 'mousse', 'gomas', 'gelatina', 'sumo', 'nectar', 'batido', 'bebida', 'licor', 'aroma', 'sabor', 'cereais', 'barra', 'chocolate', 'congelad', 'frubis', 'gel', 'leite', 'doony'] },
   blueberries: { all: ['mirtilo'], none: ['pudim', 'gelado', 'sorbet', 'iogurte', 'kefir', 'doce de', 'compota', 'marmelada', 'geleia', 'bolo', 'torta', 'tarte', 'mousse', 'gomas', 'gelatina', 'sumo', 'nectar', 'batido', 'bebida', 'licor', 'aroma', 'sabor', 'cereais', 'barra', 'chocolate', 'desidratad', 'seco', 'muffin', 'doony', 'vermelho', 'framboesa'] },
   pineapple: { all: ['ananas'], none: ['pudim', 'gelado', 'sorbet', 'iogurte', 'kefir', 'doce de', 'compota', 'marmelada', 'geleia', 'bolo', 'torta', 'tarte', 'mousse', 'gomas', 'gelatina', 'sumo', 'nectar', 'batido', 'bebida', 'licor', 'aroma', 'sabor', 'cereais', 'barra', 'chocolate', 'lata', 'calda', 'conserva', 'rodelas', 'pedacos', 'desidratad'] },
   lf_yogurt: { all: ['iogurte', 'natural'], some: ['sem lactose', 'lactose free', '0% lactose', 'zero lactose'], none: ['aroma', 'sabor', 'morango', 'frutos', 'pedacos', 'liquido', 'grego', 'acucarad']  },
-  almond_drink: { all: ['amendoa'], some: ['bebida'], any: ['sem acucar', 'sem acucares', 'nao adocada'], none: ['chocolate', 'baunilha', 'cafe', 'iogurte', 'barista'] },
+  almond_drink: { all: ['amendoa'], some: ['bebida'], any: ['sem acucar', 'sem acucares', 'nao adocada'], none: ['chocolate', 'baunilha', 'cafe', 'iogurte', 'barista', 'aveia', 'arroz', 'coco', 'avela'] },
   olive_oil: { all: ['azeite'], some: ['virgem'], any: ['extra'], none: ['spray', 'aromatizado', 'alho', 'malagueta', 'oregaos', 'atum', 'sardinha', 'bolach', 'pao', 'lata'] },
   peanut_butter: { all: ['amendoim'], some: ['manteiga', 'creme', 'pasta'], none: ['chocolate', 'barra', 'bolach', 'mel', 'snack', 'gelado', 'cone'] },
 };

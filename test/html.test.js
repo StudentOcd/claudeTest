@@ -282,6 +282,12 @@ test('shelf prices: sold by weight or by the pack, as the store shows them', () 
 });
 
 // Pingo Doce leaves rows that are 0 out of its table (medalhões de pescada: no carbohydrate row).
+test('a table of zeros is a placeholder, not a label', () => {
+  const html = `<div>Valores Nutricionais por: 100 Gramas</div><table><tr><td>Energia</td><td>0.00 kcal</td></tr>
+    <tr><td>Lípidos</td><td>0.00 g</td></tr><tr><td>Hidratos de carbono</td><td>0.00 g</td></tr><tr><td>Proteínas</td><td>0.00 g</td></tr><tr><td>Sal</td><td>0.00 g</td></tr></table>`;
+  assert.equal(parseProductPage(html).per100, null);
+});
+
 test('a label with a row left out is read as it is', () => {
   const html = `<div>Composição Nutricional</div><div>Valores médios por 100 g de produto (não preparado)</div><table>
     <tr><td>Nutriente</td><td>Quantidade</td></tr><tr><td>Energia (kJ)</td><td>302.0</td></tr><tr><td>Energia (kcal)</td><td>71.0</td></tr>

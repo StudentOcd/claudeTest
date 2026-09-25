@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { checkLabel, completeLabel, labelNutrition } from '../src/core/labels.js';
+import { checkLabel, compareToReference, completeLabel, labelNutrition } from '../src/core/labels.js';
 import { FOOD_BY_ID, macrosFor, nutritionOf, nutritionSource, setNutritionOverrides } from '../src/core/foods.js';
 
 const chicken = FOOD_BY_ID.chicken_breast;
@@ -49,17 +49,20 @@ test('a bad label is ignored and the reference stays', () => {
 test('a row the store page leaves out is worked out from the label\'s own energy', () => {
   // Real store pages: Pingo Doce leaves out rows that are 0, Auchan's turkey ham has no carbohydrate row.
   const hake = { kcal: 71, f: 0.8, satFat: 0.3, p: 16, salt: 0.225 };
-  assert.deepEqual(completeLabel(hake), { per100: { ...hake, c: 0 }, derived: 'c' });
+  assert.deepEqual(completeLabel(hake), { per100: { ...hake, c: 0 }, derived: ['c'] });
   const eggWhite = { kcal: 46, c: 0.7, p: 11, salt: 0.48 };
-  assert.deepEqual(completeLabel(eggWhite), { per100: { ...eggWhite, f: 0 }, derived: 'f' });
+  assert.deepEqual(completeLabel(eggWhite), { per100: { ...eggWhite, f: 0 }, derived: ['f'] });
+  // Olive oil: only energy and fat on the page
+  assert.deepEqual(completeLabel({ kcal: 821, f: 91.3, satFat: 13.6, salt: 0 }).derived, ['p', 'c']);
   const turkeyHam = { kcal: 79, f: 0.5, satFat: 0.2, sugars: 1.5, p: 15, salt: 1.3 };
   assert.equal(completeLabel(turkeyHam).per100.c, 3.6); // (79 − 4×15 − 9×0.5) / 4
   // Not when two rows are missing, or when the numbers can't add up
-  assert.equal(completeLabel({ kcal: 71, p: 16 }).derived, null);
-  assert.equal(completeLabel({ kcal: 40, p: 16, f: 0.8 }).derived, null);
-  assert.equal(completeLabel({ kcal: 20, p: 3, f: 0.5, sugars: 12 }).derived, null, 'fewer carbohydrates than sugars');
+  assert.deepEqual(completeLabel({ kcal: 98, p: 23 }).derived, [], 'two rows missing and energy left over');
+  assert.deepEqual(completeLabel({ kcal: 40, p: 16, f: 0.8 }).derived, []);
+  assert.deepEqual(completeLabel({ kcal: 20, p: 3, f: 0.5, sugars: 12 }).derived, [], 'fewer carbohydrates than sugars');
+  assert.deepEqual(completeLabel({ kcal: 350, c: 70, f: 1 }).derived, [], 'protein is never worked out');
   // Complete labels are left alone
-  assert.deepEqual(completeLabel({ kcal: 135, p: 13, c: 1, f: 9.3 }), { per100: { kcal: 135, p: 13, c: 1, f: 9.3 }, derived: null });
+  assert.deepEqual(completeLabel({ kcal: 135, p: 13, c: 1, f: 9.3 }), { per100: { kcal: 135, p: 13, c: 1, f: 9.3 }, derived: [] });
 
   const url = 'https://www.pingodoce.pt/home/produtos/peixaria/peixe/pescada/medalhoes-de-pescada-congelados-pingo-doce-38364.html';
   const catalog = {
@@ -69,7 +72,7 @@ test('a row the store page leaves out is worked out from the label\'s own energy
   const labels = labelNutrition({ catalog, stores: ['pingodoce'] });
   assert.equal(labels.hake.per100.kcal, 71);
   assert.equal(labels.hake.per100.c, 0);
-  assert.equal(labels.hake.source.derived, 'c');
+  assert.deepEqual(labels.hake.source.derived, ['c']);
 });
 
 test('low-energy foods: a label far in % but close in kcal is still that food', () => {
@@ -95,4 +98,13 @@ test("another product's label is never borrowed", () => {
   // pick product 2 and its label is used
   const picked = labelNutrition({ catalog, stores: ['pingodoce'], choices: { chicken_breast: { pingodoce: { url: 'https://www.pingodoce.pt/home/produtos/b-2.html' } } } });
   assert.equal(picked.chicken_breast.per100.kcal, 108);
+});
+
+test('label vs reference: only differences that matter in absolute terms', () => {
+  const rows = Object.fromEntries(compareToReference({ kcal: 89, p: 15, c: 5.1, f: 1, salt: 2.6 }, FOOD_BY_ID.turkey_ham).map((r) => [r.key, r.diffPct]));
+  assert.equal(rows.c, null, 'no percentage against a reference of ~0 g');
+  assert.equal(rows.p, -28);
+  assert.equal(rows.kcal, -10);
+  assert.equal(rows.f, null, '1 g vs 1.7 g of fat is too small to flag');
+  assert.equal(rows.salt, 37);
 });

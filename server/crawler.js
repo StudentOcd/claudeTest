@@ -328,8 +328,14 @@ export async function crawlStores(http, {
             + (ORGANIC.test(page.name || '') ? -1 : 0)
             + (page.price > 0 ? 0.5 : -5);
         };
-        const best = [...alive].sort((a, b) => score(b) - score(a))[0];
-        if (!best) return;
+        if (!alive.length) return;
+        // Equal matches: the first (researched, then best ranked), unless another is clearly
+        // (5%+) cheaper per kg or litre.
+        const perKg = ({ page }) => (page.price > 0 && ['kg', 'l'].includes(page.unitPrice?.per) ? page.unitPrice.eur : Infinity);
+        const top = Math.max(...alive.map(score));
+        const ties = alive.filter((x) => score(x) === top);
+        const cheapest = ties.reduce((m, x) => (perKg(x) < perKg(m) ? x : m), ties[0]);
+        const best = perKg(cheapest) < perKg(ties[0]) * 0.95 ? cheapest : ties[0];
         addPrice(foodId, priceEntryFromProduct(best.page, soldFor(best.candidate, best.page)));
         const list = catalog.foods[foodId]?.[store];
         if (list) catalog.foods[foodId][store] = [best.key, ...list.filter((k) => k !== best.key)];

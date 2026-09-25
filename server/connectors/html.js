@@ -380,6 +380,13 @@ export function shelfMeasures(html, price) {
   };
 }
 
+// A table of zeros is a placeholder (Auchan's vacuum-packed chicken breast: "Energia 0 kcal", every row 0).
+function realLabel(n) {
+  if (!n) return null;
+  const values = Object.values(n).filter((v) => typeof v === 'number');
+  return values.length && values.every((v) => v === 0) ? null : n;
+}
+
 // The fuller of two nutrition reads, with gaps filled from the other.
 function pickNutrition(a, b) {
   if (!a) return b;
@@ -416,7 +423,7 @@ export function parseProductPage(html, url = '') {
     available: ld?.available ?? null,
     image: absolute(ld?.image || metaContent(src, 'og:image') || ownProductImage(src, url), url),
     pack: { ...parsePackSize(name || ''), ...(shelf?.pack || {}) },
-    per100: pickNutrition(ldNutrition(ldObjs), parseNutrition(text)),
+    per100: realLabel(pickNutrition(ldNutrition(ldObjs), parseNutrition(text))),
     ingredientsText: extractIngredients(text),
   };
 }

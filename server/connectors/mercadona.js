@@ -16,7 +16,7 @@ export const MERCADONA_QUERIES = {
   beef_mince_lean: { all: ['picada'], any: ['vacuno', 'ternera'], none: ['cerdo', 'mixta', 'pollo'] },
   hake: { all: ['merluza'], some: ['filetes', 'lomos', 'rodajas'], any: ['filetes', 'lomos'], none: ['rebozad', 'empanad', 'varitas', 'surimi', 'huevo', 'libro', 'pieza'] },
   cod_desalted: { all: ['bacalao'], some: ['lomo', 'porciones', 'filetes', 'al punto de sal', 'desalad'], any: ['al punto de sal', 'desalad', 'lomo'], none: ['rebozad', 'empanad', 'ahumado', 'migas', 'albondiga', 'pimientos', 'rellen', 'bunuelo', 'croqueta', 'rodajas', 'libro', 'pieza'] },
-  salmon: { all: ['salmon'], any: ['lomos', 'rodaja', 'fresco'], none: ['ahumado', 'surimi', 'sushi'] },
+  salmon: { all: ['salmon'], any: ['lomos', 'rodaja', 'fresco'], none: ['ahumado', 'surimi', 'sushi', 'marinado', 'al natural', 'pate'] },
   tuna_water: { all: ['atun', 'natural'], any: ['claro'], none: ['aceite', 'escabeche'] },
   eggs: { all: ['huevos'], any: ['frescos', 'docena', 'medianos'], none: ['codorniz', 'chocolate', 'cocidos', 'claras', 'yemas', 'liquido'] },
   egg_whites: { all: ['clara'], any: ['huevo', 'liquida'] },
@@ -49,7 +49,7 @@ export const MERCADONA_QUERIES = {
   blueberries: { all: ['arandano'], none: ['deshidratado', 'yogur', 'rojo'] },
   pineapple: { all: ['pina'], none: ['conserva', 'zumo', 'almibar', 'rodajas', 'jugo', 'queso'] },
   lf_yogurt: { all: ['yogur', 'sin lactosa'], any: ['natural'], none: ['sabor', 'frutas', 'azucar'] },
-  almond_drink: { all: ['bebida', 'almendra'], any: ['sin azucar'], none: ['chocolate'] },
+  almond_drink: { all: ['bebida', 'almendra'], any: ['sin azucar', '0% azucar'], none: ['chocolate', 'avena', 'arroz', 'coco'] },
 };
 
 // Top-level groups that never contain food we plan (yogurts are under "Postres y yogures",

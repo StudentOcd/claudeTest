@@ -19,27 +19,35 @@ export function isCompleteLabel(per100) {
 const slack = (kcal) => Math.max(8, kcal * 0.12);
 
 /**
- * Store pages sometimes leave a row out of the table: Pingo Doce drops rows that are 0 (no
- * carbohydrate row for fish, no fat row for egg white), and some Auchan pages have no
- * carbohydrate row at all. When only carbohydrate or only fat is missing, the label's own
- * energy gives it (EU factors: 4 kcal/g protein and carbohydrate, 9 fat, 2 fibre).
- * Returns { per100, derived: 'c' | 'f' | null }: per100 unchanged when it can't be worked out.
+ * Store pages sometimes leave rows out of the table: Pingo Doce drops rows that are 0 (no
+ * carbohydrate row for fish, no fat row for egg white, neither protein nor carbohydrate for
+ * olive oil), and some Auchan pages have no carbohydrate row at all. The label's own energy
+ * gives them (EU factors: 4 kcal/g protein and carbohydrate, 9 fat, 2 fibre):
+ * - rows are 0 when the rows shown already account for the energy (oil: 9 × 91.3 g = 822 kcal);
+ * - a single missing carbohydrate or fat row is the energy left over.
+ * Protein is never worked out from the rest. Returns { per100, derived: [keys worked out] }.
  */
 export function completeLabel(per100) {
-  if (!per100 || isCompleteLabel(per100)) return { per100, derived: null };
-  const { kcal, p } = per100;
-  const missing = ['c', 'f'].filter((k) => !isNum(per100[k]));
-  if (!isNum(kcal) || !isNum(p) || missing.length !== 1) return { per100, derived: null };
-  const k = missing[0];
-  const fib = isNum(per100.fib) ? per100.fib : 0;
-  const factor = k === 'c' ? 4 : 9;
-  const v = (kcal - 4 * p - 2 * fib - (k === 'c' ? 9 * per100.f : 4 * per100.c)) / factor;
-  // A small negative is rounding on the label: the row was 0. A big one: the label doesn't add up.
-  if (v < -slack(kcal) / factor) return { per100, derived: null };
+  if (!per100 || isCompleteLabel(per100) || !isNum(per100.kcal)) return { per100, derived: [] };
+  const { kcal } = per100;
+  const missing = ['p', 'c', 'f'].filter((k) => !isNum(per100[k]));
+  const val = (k) => (isNum(per100[k]) ? per100[k] : 0);
+  const rest = kcal - 4 * val('p') - 4 * val('c') - 9 * val('f') - 2 * val('fib');
   const sugar = per100.sugars ?? per100.sugar;
-  if (k === 'c' && isNum(sugar) && v < sugar - slack(kcal) / 4) return { per100, derived: null };
+  // A row can't be 0 when the page lists part of it (sugars are carbohydrate, saturates are fat).
+  const couldBeZero = (k) => !(k === 'c' && sugar > 0.5) && !(k === 'f' && per100.satFat > 0.5);
+  if (Math.abs(rest) <= Math.max(4, kcal * 0.03) && missing.every(couldBeZero)) {
+    return { per100: { ...per100, ...Object.fromEntries(missing.map((k) => [k, 0])) }, derived: missing };
+  }
+  if (missing.length !== 1 || missing[0] === 'p') return { per100, derived: [] };
+  const k = missing[0];
+  const factor = k === 'c' ? 4 : 9;
+  const v = rest / factor;
+  // A small negative is rounding on the label: the row was 0. A big one: the label doesn't add up.
+  if (v < -slack(kcal) / factor) return { per100, derived: [] };
+  if (k === 'c' && isNum(sugar) && v < sugar - slack(kcal) / 4) return { per100, derived: [] };
   const value = Math.max(0, k === 'c' && isNum(sugar) ? sugar : 0, Math.round(v * 10) / 10);
-  return { per100: { ...per100, [k]: value }, derived: k };
+  return { per100: { ...per100, [k]: value }, derived: [k] };
 }
 
 /**
@@ -118,13 +126,17 @@ export function labelNutrition({ catalog = {}, choices = {}, stores = [] } = {})
   return out;
 }
 
-/** Label vs reference, for display: { key, label, ref, diffPct }[] */
+/**
+ * Label vs reference, for display: { key, label, ref, diffPct }[]. A difference is only given
+ * when it matters in absolute terms too (10 kcal, 1 g, 0.2 g of salt): 5 g of carbohydrate
+ * against a reference of 0.02 g is not "+22000%".
+ */
 export function compareToReference(per100, food) {
-  const keys = [['kcal', 'Energy', 'kcal'], ['p', 'Protein', 'g'], ['c', 'Carbohydrate', 'g'], ['f', 'Fat', 'g'], ['fib', 'Fibre', 'g'], ['salt', 'Salt', 'g']];
-  return keys.map(([key, name, unit]) => {
+  const keys = [['kcal', 'Energy', 'kcal', 10], ['p', 'Protein', 'g', 1], ['c', 'Carbohydrate', 'g', 1], ['f', 'Fat', 'g', 1], ['fib', 'Fibre', 'g', 1], ['salt', 'Salt', 'g', 0.2]];
+  return keys.map(([key, name, unit, matters]) => {
     const label = per100?.[key];
-    const ref = food.per100[key];
-    const diffPct = typeof label === 'number' && ref ? Math.round(((label - ref) / ref) * 100) : null;
-    return { key, name, unit, label: typeof label === 'number' ? round1(label) : null, ref: round1(ref ?? 0), diffPct };
+    const ref = food.per100[key] ?? 0;
+    const diffPct = typeof label === 'number' && ref >= matters && Math.abs(label - ref) >= matters ? Math.round(((label - ref) / ref) * 100) : null;
+    return { key, name, unit, label: typeof label === 'number' ? round1(label) : null, ref: round1(ref), diffPct };
   });
 }

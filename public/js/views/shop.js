@@ -221,11 +221,11 @@ function nutritionSection(f, product) {
       <tr><th></th><th class="right">Your plan</th><th class="right">This label</th><th class="right">CIQUAL</th></tr>
       ${rows.map((r) => html`<tr><td>${r.name}</td>
         <td class="right used">${usedRow(r.key)}${r.key === 'kcal' ? '' : ' g'}</td>
-        <td class="right">${r.label ?? '–'}${r.key === derived ? '*' : ''}${r.label !== null && r.diffPct !== null && Math.abs(r.diffPct) >= 10 ? html` <span class="diff" style="color:var(--warn)">${r.diffPct > 0 ? '+' : ''}${r.diffPct}%</span>` : ''}</td>
+        <td class="right">${r.label ?? '–'}${derived.includes(r.key) ? '*' : ''}${r.label !== null && r.diffPct !== null && Math.abs(r.diffPct) >= 10 ? html` <span class="diff" style="color:var(--warn)">${r.diffPct > 0 ? '+' : ''}${r.diffPct}%</span>` : ''}</td>
         <td class="right muted">${r.ref}</td></tr>`)}
     </table>
     <p class="tiny muted mt">${srcText}
-      ${derived ? html` *The store page leaves out the ${derived === 'c' ? 'carbohydrate' : 'fat'} row, so it is worked out from the label's own energy.` : ''}
+      ${derived.length ? html` *Not on the store page: worked out from the label's own energy.` : ''}
       ${label && !check.ok ? html` This label isn't used: ${check.why}.` : ''}
       ${!label ? (product?.detail ? " This product's page has no nutrition table (fresh meat, fish and loose produce don't need one), so the reference applies." : ' No label read for this product yet: Update on the Shop tab reads it from the store page.') : ''}
       CIQUAL 2025 is the EU food composition table from ANSES; energy and carbohydrates are calculated as on EU labels.</p>

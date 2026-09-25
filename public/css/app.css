@@ -372,6 +372,7 @@ input[type='checkbox'] { width: 20px; height: 20px; min-height: 0; accent-color:
 .shop-item .title { font-weight: 700; line-height: 1.25; cursor: pointer; }
 .shop-item .buy { font-size: 0.82rem; color: var(--text-2); margin-top: 3px; }
 .shop-item .buy b { color: var(--text); }
+.shop-item .grow .price-sub { white-space: normal; }
 .price { font-weight: 800; font-size: 1.02rem; white-space: nowrap; letter-spacing: -0.01em; }
 .price-sub { font-size: 0.72rem; color: var(--muted); font-weight: 600; white-space: nowrap; }
 
