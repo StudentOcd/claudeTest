@@ -1,0 +1,660 @@
+From a8a45106e14d88dc3a9367ce13135776cb4552ea Mon Sep 17 00:00:00 2001
+From: Claude <noreply@anthropic.com>
+Date: Tue, 6 Oct 2026 21:45:31 +0000
+Subject: [PATCH] Add celebrating, dizzy, startled, listening and bored moods
+
+Clawd now reacts to how a turn ends (confetti for an answer, dizzy for an
+error or refusal, startled for an interruption), leans in and reads along
+while you type, and gets bored after a configurable quiet spell. Awake
+gains a wave and a stretch, vibing two more dance moves, sleeping snore
+bubbles.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01TUcekKvdxKpaSnZ3rFWJXZ
+---
+ .claude-plugin/plugin.json |  10 ++-
+ README.md                  |  13 +++-
+ hooks/clawd.ts             | 107 ++++++++++++++++++++++++++--
+ hooks/register.tsx         | 131 ++++++++++++++++++++++++++++++++++-
+ tests/clawd.test.tsx       | 138 ++++++++++++++++++++++++++++++++++++-
+ types/index.d.ts           |   4 ++
+ 6 files changed, 392 insertions(+), 11 deletions(-)
+
+diff --git a/.claude-plugin/plugin.json b/.claude-plugin/plugin.json
+index 1b0b199..064df34 100644
+--- a/.claude-plugin/plugin.json
++++ b/.claude-plugin/plugin.json
+@@ -1,7 +1,7 @@
+ {
+   "name": "clawd-vibe",
+-  "version": "0.2.0",
+-  "description": "Clawd above the prompt: dances with a headset while Spotify plays, idles during a conversation, sleeps otherwise.",
++  "version": "0.3.0",
++  "description": "Clawd above the prompt: dances with a headset while Spotify plays, cheers when a turn finishes, reads along as you type, gets bored, idles during a conversation, sleeps otherwise.",
+   "author": { "name": "Ferreira" },
+   "license": "MIT",
+   "types": "./types/index.d.ts",
+@@ -23,6 +23,12 @@
+       "title": "Seconds of silence before Clawd stops vibing",
+       "description": "How long the music must be off before the dance ends.",
+       "default": 2
++    },
++    "boredAfterSeconds": {
++      "type": "number",
++      "title": "Seconds of quiet before Clawd gets bored",
++      "description": "How long a conversation can sit idle before Clawd starts tapping his foot and yawning. 0 turns it off.",
++      "default": 120
+     }
+   }
+ }
+diff --git a/README.md b/README.md
+index 368845b..c53ec2b 100644
+--- a/README.md
++++ b/README.md
+@@ -4,9 +4,17 @@ A [Claude Code](https://claude.com/claude-code) mod that puts Clawd above your p
+ 
+ | Mood | When | What you see |
+ | --- | --- | --- |
++| **Celebrating** | a turn just finished with an answer (for 5 s) | happy eyes, arms in the air, confetti and `all done!` |
++| **Dizzy** | a turn just ended in an error or a refusal (for 5 s) | `x` eyes, swaying, stars circling his head |
++| **Startled** | you just interrupted a turn (for 5 s) | wide eyes, a `!`, then he settles back down |
+ | **Vibing** | Spotify is playing | Clawd in a headset dancing, floating notes, an equaliser and `vibing to Artist - Track` |
+-| **Awake** | no music, a conversation is going | Clawd stands there, blinks and glances around |
+-| **Sleeping** | no music, no conversation yet (fresh session, or after `/clear`) | closed eyes, dim colours, drifting Zs |
++| **Listening** | you are typing in the prompt (until 2 s after the last key) | Clawd leans in and reads along, with typing dots |
++| **Bored** | a conversation is going but nothing has happened for a while (2 min by default) | taps his foot, glances around, yawns, `…still here` |
++| **Awake** | no music, a conversation is going | Clawd stands there, blinks, glances around, waves and stretches |
++| **Sleeping** | no music, no conversation yet (fresh session, or after `/clear`) | closed eyes, dim colours, drifting Zs and snore bubbles |
++
++The moods are listed from strongest to weakest: a reaction to a finished turn shows even over the music, and typing
++wakes a sleeping Clawd.
+ 
+ Clawd only shows while Claude is idle. The animation needs block characters, so use a terminal that draws them
+ properly (in VS Code's terminal keep `terminal.integrated.gpuAcceleration` on).
+@@ -32,6 +40,7 @@ Answer `y` to add the marketplace, pick a scope, and the install screen asks for
+ | **Spotify status file** (required) | Full path of the JSON file the watcher writes and the mod reads, e.g. `C:\Users\you\AppData\Local\clawd-vibe\.clawd-spotify.json`. From WSL use `/mnt/c/Users/you/...`. |
+ | **Start the watcher at every Windows logon** | Creates a hidden scheduled task so you never start the watcher by hand. Off by default. |
+ | **Seconds of silence before Clawd stops vibing** | Default `2`. |
++| **Seconds of quiet before Clawd gets bored** | Default `120`. `0` turns the bored mood off. |
+ 
+ Change them later from `/config`.
+ 
+diff --git a/hooks/clawd.ts b/hooks/clawd.ts
+index 9e71400..07b5e2e 100644
+--- a/hooks/clawd.ts
++++ b/hooks/clawd.ts
+@@ -1,4 +1,4 @@
+-import type { NowPlaying } from '../types'
++import type { NowPlaying, Reaction } from '../types'
+ 
+ export const POLL_MS = 1000
+ export const FRAME_MS = 350
+@@ -7,6 +7,9 @@ export const STALE_AFTER_MS = 15_000
+ export const TASK_NAME = 'Clawd Spotify Watch'
+ export const SLEEP_TICKS = 3
+ export const IDLE_TICKS = 2
++export const REACTION_MS = 5_000
++export const LISTEN_MS = 2_000
++export const BORED_AFTER_MS = 120_000
+ 
+ export const SILENT: NowPlaying = { isPlaying: false, track: '' }
+ 
+@@ -40,6 +43,8 @@ export const FRAMES = [
+   { notes: '        ♫   ', eq: '▅▃▇▂', body: ['   ╭─────╮  ', '   ▐▛███▜▌  ', '  ▝▜█████▛▘ ', '    ▘▘ ▝▝   '] },
+   { notes: '  ♫     ♪   ', eq: '▇▅▃▆', body: ['  ╭─────╮   ', ' ▗▐▛███▜▌▖  ', '  ▜█████▛   ', '   ▝▝ ▘▘    '] },
+   { notes: '      ♪     ', eq: '▂▇▅▃', body: [' ╭─────╮    ', ' ▐▛███▜▌    ', '▝▜█████▛▘   ', '  ▘▘ ▝▝     '] },
++  { notes: '  ♪   ♫     ', eq: '▆▂▇▄', body: ['  ╭─────╮   ', ' ▘▐▙███▟▌▝  ', '  ▜█████▛   ', '   ▝▘ ▝▘    '] },
++  { notes: '         ♪  ', eq: '▃▇▅▂', body: ['    ╭─────╮ ', '    ▐▛███▜▌ ', '   ▝▜█████▛▖', '     ▘▘ ▝▝  '] },
+ ]
+ 
+ export const SLEEP_FRAMES = [
+@@ -47,24 +52,116 @@ export const SLEEP_FRAMES = [
+   { zs: ['            ', '        z Z '], body: ['  ▐▀███▀▌   ', ' ▝▜█████▛▘  ', '   ▘▘ ▝▝    '] },
+   { zs: ['          Z ', '        z  z'], body: ['  ▐▀███▀▌   ', ' ▝▜█████▛▘  ', '   ▘▘ ▝▝    '] },
+   { zs: ['         Z  ', '            '], body: ['  ▐▀███▀▌   ', '  ▜█████▛   ', '   ▘▘ ▝▝    '] },
++  { zs: ['            ', '         o  '], body: ['  ▐▀███▀▌   ', ' ▝▜█████▛▘  ', '   ▘▘ ▝▝    '] },
++  { zs: ['         O  ', '            '], body: ['  ▐▀███▀▌   ', ' ▝▜█████▛▘  ', '   ▘▘ ▝▝    '] },
+ ]
+ 
+-type Face = '▛███▜' | '▜██▛█' | '█▜██▛' | '▙███▟' | '█████'
++type Face = '▛███▜' | '▜██▛█' | '█▜██▛' | '▙███▟' | '█████' | '▀███▀' | 'x███x' | 'o███o'
+ const AHEAD: Face = '▛███▜', LEFT: Face = '▜██▛█', RIGHT: Face = '█▜██▛', UP: Face = '▙███▟', BLINK: Face = '█████'
++const SHUT: Face = '▀███▀', DIZZY: Face = 'x███x', WIDE: Face = 'o███o'
+ 
+-function awake(face: Face, dx = 0): [string, string, string] {
++type Rows = [string, string, string]
++
++const HEAD = (face: Face) => `  ▐${face}▌   `
++const ARMS = ' ▝▜█████▛▘  '
++const LEGS = '   ▘▘ ▝▝    '
++// Both arms up beside the head, the body bare beneath them.
++const CHEER = (face: Face): Rows => [` ▗▐${face}▌▖  `, '  ▜█████▛   ', '   ▝▘ ▝▘    ']
++
++function awake(face: Face, dx = 0): Rows {
+   const shift = (row: string) => (' '.repeat(dx) + row).slice(0, 12)
+ 
+-  return [shift(`  ▐${face}▌   `), shift(' ▝▜█████▛▘  '), shift('   ▘▘ ▝▝    ')]
++  return [shift(HEAD(face)), shift(ARMS), shift(LEGS)]
+ }
+ 
+-export const IDLE_FRAMES = [
++// One hand raised and waving: `hand` is the corner of the block it shows.
++const wave = (hand: '▖' | '▗'): Rows => [`  ▐${AHEAD}▌${hand}  `, ' ▝▜█████▛   ', LEGS]
++const tap: Rows = [HEAD(AHEAD), ARMS, '   ▘▘ ▝▗    ']
++
++export const IDLE_FRAMES: Rows[] = [
+   awake(AHEAD), awake(AHEAD), awake(AHEAD), awake(AHEAD), awake(BLINK), awake(AHEAD), awake(AHEAD),
+   awake(LEFT), awake(AHEAD), awake(AHEAD), awake(RIGHT), awake(AHEAD), awake(AHEAD),
+   awake(AHEAD), awake(BLINK), awake(AHEAD), awake(AHEAD, 1), awake(AHEAD, 1), awake(AHEAD, 1),
+   awake(AHEAD), awake(AHEAD), awake(UP), awake(AHEAD), awake(AHEAD),
++  wave('▖'), wave('▗'), wave('▖'), wave('▗'), awake(AHEAD), awake(AHEAD),
++  awake(AHEAD), CHEER(UP), CHEER(UP), awake(BLINK), awake(AHEAD), awake(AHEAD),
++]
++
++// A mood drawn as a row above Clawd (stars, confetti, dots) and his three rows.
++export type Pose = { top: string; rows: Rows }
++
++// What Clawd shows the moment a turn ends, for REACTION_MS.
++export const REACTIONS: Record<Reaction, { frames: Pose[]; ticks: number; label: string; color: 'warning' | 'error' | 'suggestion' }> = {
++  celebrating: {
++    ticks: 1,
++    label: 'all done!',
++    color: 'warning',
++    frames: [
++      { top: ' *    +   * ', rows: awake(UP) },
++      { top: '   +  *  ·  ', rows: CHEER(UP) },
++      { top: ' ·  *    +  ', rows: awake(UP) },
++      { top: '  *   · *   ', rows: CHEER(UP) },
++    ],
++  },
++  dizzy: {
++    ticks: 2,
++    label: 'ouch, something went wrong',
++    color: 'error',
++    frames: [
++      { top: '  *  ·  °   ', rows: awake(DIZZY) },
++      { top: '   ·  °  *  ', rows: awake(DIZZY, 1) },
++      { top: '  °  *  ·   ', rows: awake(DIZZY) },
++      { top: '   *  ·  °  ', rows: awake(DIZZY, 1) },
++    ],
++  },
++  startled: {
++    ticks: 2,
++    label: 'whoa, stopping!',
++    color: 'suggestion',
++    frames: [
++      { top: '     !      ', rows: CHEER(WIDE) },
++      { top: '     !      ', rows: awake(WIDE) },
++      { top: '            ', rows: awake(WIDE) },
++      { top: '            ', rows: awake(BLINK) },
++      { top: '            ', rows: awake(AHEAD) },
++      { top: '            ', rows: awake(AHEAD) },
++    ],
++  },
++}
++
++// You are typing: Clawd leans towards the prompt and reads along.
++export const LISTEN_FRAMES: Pose[] = [
++  { top: '         .  ', rows: awake(LEFT, 1) },
++  { top: '         .. ', rows: awake(AHEAD, 1) },
++  { top: '         ...', rows: awake(RIGHT, 1) },
++  { top: '            ', rows: awake(AHEAD, 1) },
+ ]
+ 
++// A conversation is going but nobody has said anything for a while.
++export const BORED_FRAMES: Pose[] = [
++  { top: '            ', rows: awake(AHEAD) },
++  { top: '            ', rows: tap },
++  { top: '            ', rows: awake(AHEAD) },
++  { top: '            ', rows: tap },
++  { top: '            ', rows: awake(LEFT) },
++  { top: '            ', rows: awake(AHEAD) },
++  { top: '         o  ', rows: awake(SHUT) },
++  { top: '        O   ', rows: awake(SHUT) },
++  { top: '            ', rows: awake(SHUT) },
++  { top: '            ', rows: awake(BLINK) },
++  { top: '            ', rows: awake(UP) },
++  { top: '            ', rows: awake(AHEAD) },
++]
++
++// How a turn's end makes Clawd react: only the main conversation's turns count.
++export function reactionFor(reason: string): Reaction {
++  if (reason === 'answer') {
++    return 'celebrating'
++  }
++
++  return reason === 'aborted' ? 'startled' : 'dizzy'
++}
++
+ // A body row as runs of headset and body characters, each drawn in its own colour.
+ export function runs(row: string): { text: string; isHeadset: boolean }[] {
+   const out: { text: string; isHeadset: boolean }[] = []
+diff --git a/hooks/register.tsx b/hooks/register.tsx
+index 83c56f7..4ca3e53 100644
+--- a/hooks/register.tsx
++++ b/hooks/register.tsx
+@@ -1,25 +1,49 @@
+ import { atom, read, update } from 'claude-code'
+ import type { EngineInterface, Register, Timer } from 'claude-code'
+ 
+-import type { NowPlaying } from '../types'
++import type { NowPlaying, Reaction } from '../types'
+ import {
++  BORED_AFTER_MS,
++  BORED_FRAMES,
+   FRAME_MS,
+   FRAMES,
+   IDLE_FRAMES,
+   IDLE_TICKS,
++  LISTEN_FRAMES,
++  LISTEN_MS,
+   POLL_MS,
++  REACTION_MS,
++  REACTIONS,
+   SILENT,
+   SLEEP_AFTER_MS,
+   TASK_NAME,
+   SLEEP_FRAMES,
+   SLEEP_TICKS,
+   parseStatus,
++  reactionFor,
+   runs,
+ } from './clawd'
++import type { Pose } from './clawd'
+ 
+ const nowPlaying = atom({ plugin: 'clawd-vibe', key: 'nowPlaying' } as const, SILENT)
+ const frame = atom({ plugin: 'clawd-vibe', key: 'frame' } as const, 0)
+ const inConversation = atom({ plugin: 'clawd-vibe', key: 'inConversation' } as const, false)
++const reaction = atom({ plugin: 'clawd-vibe', key: 'reaction' } as const, null as Reaction | null)
++const listening = atom({ plugin: 'clawd-vibe', key: 'listening' } as const, false)
++const bored = atom({ plugin: 'clawd-vibe', key: 'bored' } as const, false)
++
++// Each writes its flag only when it changes, so a poll redraws nothing it need not.
++async function setListening($: EngineInterface, value: boolean) {
++  if ((await read($, listening)) !== value) {
++    await update($, listening, () => value)
++  }
++}
++
++async function setBored($: EngineInterface, value: boolean) {
++  if ((await read($, bored)) !== value) {
++    await update($, bored, () => value)
++  }
++}
+ 
+ // Registers the Windows scheduled task that runs the watcher at every logon.
+ // Skipped when the task already exists, unless `force`.
+@@ -64,6 +88,13 @@ type Ctx = {
+   // conversation is going: `cleared` holds from a /clear to the next turn.
+   cleared: boolean
+   conversing: boolean
++  boredAfterMs: number
++  // How the last turn ended, shown until `reactionUntil`.
++  reaction: Reaction | null
++  reactionUntil: number
++  // The last keystroke in the prompt, and the last thing anyone did.
++  typedAt: number
++  lastActiveAt: number
+   timers: Timer[]
+   // A resume swaps the session without a session.start and can end the old
+   // session's timers, so each poll stamps this and `ensurePolling` restarts
+@@ -105,12 +136,31 @@ async function poll($: EngineInterface, ctx: Ctx) {
+     if (isGoing && !(await read($, inConversation))) {
+       await update($, inConversation, () => true)
+     }
++
++    if (ctx.reaction && now >= ctx.reactionUntil) {
++      ctx.reaction = null
++    }
++
++    if ((await read($, reaction)) !== ctx.reaction) {
++      const shown = ctx.reaction
++      await update($, reaction, () => shown)
++    }
++
++    await setListening($, now - ctx.typedAt < LISTEN_MS)
++    await setBored(
++      $,
++      ctx.boredAfterMs > 0 && (await read($, inConversation)) && now - ctx.lastActiveAt >= ctx.boredAfterMs,
++    )
+   } catch {
+     // the next poll tries again
+   }
+ }
+ 
+ async function startPolling($: EngineInterface, ctx: Ctx) {
++  if (!ctx.lastActiveAt) {
++    ctx.lastActiveAt = await $.clock.now()
++  }
++
+   for (const timer of ctx.timers) {
+     timer.cancel()
+   }
+@@ -143,6 +193,14 @@ export const register: Register = (on, options) => {
+     lastPlayedAt: -Infinity,
+     cleared: false,
+     conversing: false,
++    boredAfterMs:
++      typeof options.boredAfterSeconds === 'number' && options.boredAfterSeconds >= 0
++        ? options.boredAfterSeconds * 1000
++        : BORED_AFTER_MS,
++    reaction: null,
++    reactionUntil: 0,
++    typedAt: -Infinity,
++    lastActiveAt: 0,
+     timers: [],
+     lastPollAt: 0,
+   }
+@@ -171,17 +229,54 @@ export const register: Register = (on, options) => {
+   on('turn.start', async ($, e, next) => {
+     ctx.cleared = false
+     ctx.conversing = true
++    ctx.reaction = null
++    ctx.typedAt = -Infinity
++    ctx.lastActiveAt = await $.clock.now()
+     await update($, inConversation, () => true)
++    await update($, reaction, () => null)
++    await setListening($, false)
++    await setBored($, false)
+     await ensurePolling($, ctx)
+ 
+     return next(e)
+   })
+ 
++  // A subagent's turns end inside the main one: only the main loop's count.
++  on('turn.complete', async ($, e, next) => {
++    if (e.agentId === undefined) {
++      const now = await $.clock.now()
++      const kind = reactionFor(e.reason)
++      ctx.reaction = kind
++      ctx.reactionUntil = now + REACTION_MS
++      ctx.lastActiveAt = now
++      await update($, reaction, () => kind)
++      await setBored($, false)
++    }
++
++    return next(e)
++  })
++
++  // Every keystroke passes here, so this only notes the time and never waits.
++  on('prompt.edit', ($, e, next) => {
++    void (async () => {
++      const now = await $.clock.now()
++      ctx.typedAt = now
++      ctx.lastActiveAt = now
++      await setListening($, true)
++      await setBored($, false)
++    })().catch(() => {})
++
++    return next(e)
++  })
++
+   on('session.end', async ($, e, next) => {
+     if (e.reason === 'clear') {
+       ctx.cleared = true
+       ctx.conversing = false
++      ctx.reaction = null
+       await update($, inConversation, () => false)
++      await update($, reaction, () => null)
++      await setBored($, false)
+     } else if (e.reason === 'resume') {
+       // A resume loads a conversation that already has turns: lift the /clear
+       // hold so the next poll, which counts them, wakes Clawd.
+@@ -204,8 +299,34 @@ export const register: Register = (on, options) => {
+     const stored = await read($, nowPlaying)
+     const playing = stored.isPlaying ? stored : ctx.known
+     const isAwake = await read($, inConversation)
++    const reacting = await read($, reaction)
++    const isListening = await read($, listening)
++    const isBored = await read($, bored)
+     const band = await next(e)
+ 
++    // Stars, confetti or dots above Clawd, then his three rows with a label beside the middle one.
++    const posed = (pose: Pose, label: string, topColor: 'warning' | 'error' | 'suggestion' | 'inactive') => (
++      <Box flexDirection="column">
++        <Text color={topColor}>{pose.top}</Text>
++        <Text color="claude">{pose.rows[0]}</Text>
++        <Box>
++          <Text color="claude">{pose.rows[1]}</Text>
++          <Text dimColor wrap="truncate-end">
++            {' '}
++            {label}
++          </Text>
++        </Box>
++        <Text color="claude">{pose.rows[2]}</Text>
++        {band}
++      </Box>
++    )
++
++    if (reacting) {
++      const { frames, ticks, label, color } = REACTIONS[reacting]
++
++      return posed(frames[Math.floor(tick / ticks) % frames.length]!, label, color)
++    }
++
+     if (playing.isPlaying) {
+       const { notes, eq, body } = FRAMES[tick % FRAMES.length]!
+       const row = (text: string) => (
+@@ -235,6 +356,14 @@ export const register: Register = (on, options) => {
+       )
+     }
+ 
++    if (isListening) {
++      return posed(LISTEN_FRAMES[Math.floor(tick / IDLE_TICKS) % LISTEN_FRAMES.length]!, 'listening…', 'suggestion')
++    }
++
++    if (isAwake && isBored) {
++      return posed(BORED_FRAMES[Math.floor(tick / IDLE_TICKS) % BORED_FRAMES.length]!, '…still here', 'inactive')
++    }
++
+     if (isAwake) {
+       const rows = IDLE_FRAMES[Math.floor(tick / IDLE_TICKS) % IDLE_FRAMES.length]!
+ 
+diff --git a/tests/clawd.test.tsx b/tests/clawd.test.tsx
+index 3e349c6..ccb73a1 100644
+--- a/tests/clawd.test.tsx
++++ b/tests/clawd.test.tsx
+@@ -1,12 +1,18 @@
+ import type { On } from 'claude-code'
+ import { describe, expect, mock, test } from 'claude-code/testing'
+-import type { Engine } from 'claude-code/testing'
++import type { Engine, EngineCall } from 'claude-code/testing'
+ 
+ import {
++  BORED_AFTER_MS,
++  BORED_FRAMES,
+   FRAME_MS,
+   FRAMES,
+   IDLE_FRAMES,
+   IDLE_TICKS,
++  LISTEN_FRAMES,
++  LISTEN_MS,
++  REACTION_MS,
++  REACTIONS,
+   SLEEP_AFTER_MS,
+   SLEEP_FRAMES,
+   SLEEP_TICKS,
+@@ -49,6 +55,8 @@ function world(on: On) {
+   on('session.turns', () => ({ value: state.turns }))
+   on('session.start', ($, e) => ({ cwd: e.cwd }))
+   on('turn.start', ($, e) => ({ turnId: e.turnId }))
++  on('turn.complete', ($, e) => ({ text: e.answer }))
++  on('prompt.edit', ($, e) => ({ text: e.text + e.inputText, cursor: e.cursor + e.inputText.length }))
+   on('session.end', ($, e) => ({ sessionId: e.sessionId }))
+   on('ui.render', { component: 'AbovePrompt' }, ($, e) => {
+     const { Text } = $.ui.resolve(e)
+@@ -107,6 +115,27 @@ describe('parseStatus', () => {
+   })
+ })
+ 
++const finish = ($: Engine, reason: 'answer' | 'aborted' | 'error', agentId?: string) =>
++  $.turn.complete({
++    answer: 'ok',
++    durationMs: 1000,
++    isAborted: reason === 'aborted',
++    turnId: 't1',
++    reason,
++    ...(agentId ? { agentId } : {}),
++  })
++
++// The engine raises prompt.edit on every keystroke; the test kit's types leave it off `$.prompt`.
++const type = ($: Engine, inputText: string) =>
++  ($.prompt as unknown as { edit: EngineCall<'prompt.edit'> }).edit({ origin: { kind: 'composer' }, text: '', cursor: 0, start: 0, end: 0, inputText })
++
++// Starts a session with one turn behind it, so Clawd is awake.
++async function chatting($: Engine, state: { turns: number }) {
++  await start($)
++  await $.turn.start({ text: 'hi', turnId: 't1' })
++  state.turns = 1
++}
++
+ for (const surface of SURFACES) {
+   describe(surface, () => {
+     test('playing and idle: vibing above the engine band, animated', OPTS, async ($, on) => {
+@@ -204,9 +233,113 @@ for (const surface of SURFACES) {
+ 
+       await ui.unmount()
+     })
++
++    test('a finished turn: Clawd celebrates, then goes back to waiting', OPTS, async ($, on) => {
++      const { clock, state } = world(on)
++      await chatting($, state)
++      const ui = await mount($, surface)
++
++      await finish($, 'answer')
++      expect(await shown(ui)).toContain(REACTIONS.celebrating.label)
++      expect(await drawings(ui, clock, 4)).toHaveProperty('size', 4)
++
++      await clock.advance(REACTION_MS)
++      const after = await shown(ui)
++      expect(after).not.toContain(REACTIONS.celebrating.label)
++      expect(after).toContain('awake, waiting for you…')
++      await ui.unmount()
++    })
++
++    test('an error makes Clawd dizzy, an interruption startles him', OPTS, async ($, on) => {
++      const { clock, state } = world(on)
++      await chatting($, state)
++      const ui = await mount($, surface)
++
++      await finish($, 'error')
++      expect(await shown(ui)).toContain(REACTIONS.dizzy.label)
++
++      await clock.advance(REACTION_MS)
++      await finish($, 'aborted')
++      expect(await shown(ui)).toContain(REACTIONS.startled.label)
++      await ui.unmount()
++    })
++
++    test("a subagent's turn ending is no reason to celebrate", OPTS, async ($, on) => {
++      const { state } = world(on)
++      await chatting($, state)
++      const ui = await mount($, surface)
++
++      await finish($, 'answer', 'agent-1')
++      expect(await shown(ui)).toContain('awake, waiting for you…')
++      await ui.unmount()
++    })
++
++    test('a reaction shows over the music, then the vibing comes back', OPTS, async ($, on) => {
++      const { clock, state } = world(on)
++      state.isPlaying = true
++      await chatting($, state)
++      const ui = await mount($, surface)
++
++      await finish($, 'answer')
++      expect(await shown(ui)).toContain(REACTIONS.celebrating.label)
++
++      await clock.advance(REACTION_MS)
++      expect(await shown(ui)).toContain('vibing to')
++      await ui.unmount()
++    })
++
++    test('typing wakes Clawd to read along, and he stops soon after', OPTS, async ($, on) => {
++      const { clock } = world(on)
++      await start($)
++      const ui = await mount($, surface)
++      expect(await shown(ui)).toContain('sleeping…')
++
++      await type($, 'h')
++      await clock.advance(0)
++      expect(await shown(ui)).toContain('listening…')
++      expect(await drawings(ui, clock, LISTEN_FRAMES.length * IDLE_TICKS)).toHaveProperty('size', LISTEN_FRAMES.length)
++
++      await clock.advance(LISTEN_MS + 1000)
++      expect(await shown(ui)).toContain('sleeping…')
++      await ui.unmount()
++    })
++
++    test('a long quiet makes Clawd bored, typing cheers him up', OPTS, async ($, on) => {
++      const { clock, state } = world(on)
++      await chatting($, state)
++      const ui = await mount($, surface)
++
++      await clock.advance(BORED_AFTER_MS - 2000)
++      expect(await shown(ui)).toContain('awake, waiting for you…')
++
++      await clock.advance(3000)
++      expect(await shown(ui)).toContain('…still here')
++      expect((await drawings(ui, clock, BORED_FRAMES.length * IDLE_TICKS)).size).toBeGreaterThan(4)
++
++      await type($, 'x')
++      await clock.advance(0)
++      expect(await shown(ui)).toContain('listening…')
++      await clock.advance(LISTEN_MS + 1000)
++      expect(await shown(ui)).toContain('awake, waiting for you…')
++      await ui.unmount()
++    })
+   })
+ }
+ 
++test(
++  'boredAfterSeconds 0: Clawd never gets bored',
++  { options: { statusFile: DEFAULT_FILE, boredAfterSeconds: 0 } },
++  async ($, on) => {
++    const { clock, state } = world(on)
++    await chatting($, state)
++    const ui = await mount($, 'terminal')
++
++    await clock.advance(BORED_AFTER_MS * 3)
++    expect(await shown(ui)).toContain('awake, waiting for you…')
++    await ui.unmount()
++  },
++)
++
+ test('reads the configured status file', OPTS, async ($, on) => {
+   const { state } = world(on)
+   await start($)
+@@ -262,6 +395,9 @@ describe('frames', () => {
+       ...FRAMES.flatMap(frame => [frame.notes, ...frame.body]),
+       ...SLEEP_FRAMES.flatMap(frame => [...frame.zs, ...frame.body]),
+       ...IDLE_FRAMES.flat(),
++      ...[...Object.values(REACTIONS).flatMap(r => r.frames), ...LISTEN_FRAMES, ...BORED_FRAMES].flatMap(
++        pose => [pose.top, ...pose.rows],
++      ),
+     ]
+ 
+     for (const row of rows) {
+diff --git a/types/index.d.ts b/types/index.d.ts
+index 0d2ffb6..9ccf020 100644
+--- a/types/index.d.ts
++++ b/types/index.d.ts
+@@ -1,4 +1,5 @@
+ export type NowPlaying = { isPlaying: boolean; track: string }
++export type Reaction = 'celebrating' | 'dizzy' | 'startled'
+ 
+ declare module 'claude-code' {
+   interface PluginState {
+@@ -6,6 +7,9 @@ declare module 'claude-code' {
+       nowPlaying: NowPlaying
+       frame: number
+       inConversation: boolean
++      reaction: Reaction | null
++      listening: boolean
++      bored: boolean
+     }
+   }
+ }
+-- 
+2.43.0
+
